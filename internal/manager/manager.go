@@ -6,6 +6,8 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 )
 
 // ServiceConfig represents a service configuration structure.
@@ -29,14 +31,18 @@ type Service struct {
 	VersionDir string
 }
 
-// Manager manages service configurations and operations.
+// Manager manages the retrieval of service configurations
 type Manager struct {
-	BasePath string
+	BasePath  string
+	isWindows bool
 }
 
-// NewManager creates a new Manager instance with the given base path.
+// NewManager initializes a new Manager instance and detects if the OS is Windows
 func NewManager(basePath string) *Manager {
-	return &Manager{BasePath: basePath}
+	return &Manager{
+		BasePath:  basePath,
+		isWindows: runtime.GOOS == "windows",
+	}
 }
 
 // GetServiceConfigurations reads the configurations for each service in the `current` version directories
@@ -47,29 +53,22 @@ func (m *Manager) GetServiceConfigurations() ([]Service, error) {
 	servicesPath := filepath.Join(m.BasePath, "services")
 	log.Printf("Starting traversal in base services path: %s", servicesPath)
 
-	// List all directories in the base services path
 	entries, err := os.ReadDir(servicesPath)
 	if err != nil {
 		return nil, fmt.Errorf("error reading services directory: %v", err)
 	}
 
-	// Loop through each directory and look for the "current" symlink
 	for _, entry := range entries {
 		if entry.IsDir() {
-			serviceDir := filepath.Join(servicesPath, entry.Name(), "current")
-			log.Printf("Checking for 'current' directory or symlink at: %s", serviceDir)
-
-			// Resolve the `current` symlink or path
-			resolvedPath, err := filepath.EvalSymlinks(serviceDir)
+			// Resolve the "current" path for each service
+			currentPath, err := m.resolveCurrentPath(servicesPath, entry.Name())
 			if err != nil {
-				log.Printf("Skipping %s: not a valid symlink or directory", serviceDir)
+				log.Printf("Skipping service directory %s due to error: %v", entry.Name(), err)
 				continue
 			}
 
-			// Load the configuration file
-			configFilePath := filepath.Join(resolvedPath, "config.yaml")
-			log.Printf("Looking for config file at: %s", configFilePath)
-
+			// Read the service configuration
+			configFilePath := filepath.Join(currentPath, "config.yaml")
 			configFile, err := os.Open(configFilePath)
 			if err != nil {
 				log.Printf("Error opening config file %s: %v", configFilePath, err)
@@ -83,16 +82,32 @@ func (m *Manager) GetServiceConfigurations() ([]Service, error) {
 				continue
 			}
 
-			// Append service with its configuration and version directory
 			service := Service{
 				Config:     config,
-				VersionDir: resolvedPath,
+				VersionDir: currentPath,
 			}
 			services = append(services, service)
-			log.Printf("Loaded configuration for service: %s, version directory: %s", config.Services[0].Name, resolvedPath)
+			log.Printf("Loaded configuration for service: %s, version directory: %s", config.Services[0].Name, currentPath)
 		}
 	}
 
 	log.Printf("Total services loaded: %d", len(services))
 	return services, nil
+}
+
+// resolveCurrentPath determines the "current" path based on the OS.
+// On Windows, it reads "current" as a file with the directory name inside.
+// On Linux/Mac, it treats "current" as a symlink.
+func (m *Manager) resolveCurrentPath(basePath, serviceName string) (string, error) {
+	currentPath := filepath.Join(basePath, serviceName, "current")
+
+	if m.isWindows {
+		content, err := os.ReadFile(currentPath)
+		if err != nil {
+			return "", fmt.Errorf("unable to read symlink file: %v", err)
+		}
+		return filepath.Join(filepath.Dir(currentPath), strings.TrimSpace(string(content))), nil
+	}
+
+	return filepath.EvalSymlinks(currentPath)
 }
