@@ -1,7 +1,8 @@
-package repositories
+package repos
 
 import (
 	"github.com/plantarium-platform/herbarium-go/internal/storage"
+	"github.com/plantarium-platform/herbarium-go/pkg/models"
 	"testing"
 	"time"
 )
@@ -94,7 +95,7 @@ func TestLeafRepository_UpdateLeafStatus(t *testing.T) {
 	repo := NewLeafRepository(testStorage)
 
 	// Update the status of an existing leaf
-	err := repo.UpdateLeafStatus("system-service", "leaf-1", storage.StatusRunning)
+	err := repo.UpdateLeafStatus("system-service", "leaf-1", models.StatusRunning)
 	if err != nil {
 		t.Fatalf("failed to update leaf status: %v", err)
 	}
@@ -105,7 +106,7 @@ func TestLeafRepository_UpdateLeafStatus(t *testing.T) {
 		t.Fatalf("failed to find leaf after status update: %v", err)
 	}
 
-	if leaf.Status != storage.StatusRunning {
+	if leaf.Status != models.StatusRunning {
 		t.Errorf("expected leaf status to be RUNNING, got %s", leaf.Status)
 	}
 }
@@ -114,12 +115,12 @@ func TestLeafRepository_SetGraftNode(t *testing.T) {
 	testStorage := storage.GetTestStorage()
 	repo := NewLeafRepository(testStorage)
 
-	graftNode := &storage.Leaf{
+	graftNode := &models.Leaf{
 		ID:            "graft-leaf-new",
 		PID:           3456,
 		HAProxyServer: "haproxy-user",
 		Port:          9093,
-		Status:        storage.StatusStarting,
+		Status:        models.StatusStarting,
 		Initialized:   time.Now(),
 	}
 

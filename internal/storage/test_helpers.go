@@ -5,27 +5,27 @@ import (
 	"time"
 )
 
-func initTestStorage() *LeafStorage {
+func initTestStorage() *HerbariumDB {
 	// Create fixed timestamp for consistent test data
 	fixedTime := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
 
 	// Initialize storage with direct struct assignment
-	return &LeafStorage{
-		Stems: map[string]*Stem{
+	return &HerbariumDB{
+		Stems: map[string]*models.Stem{
 			"system-service": {
 				Name:           "system-service",
-				Type:           StemTypeSystem,
+				Type:           models.StemTypeSystem,
 				WorkingURL:     "http://localhost:8080",
 				HAProxyBackend: "haproxy-system",
 				Version:        "1.0.0",
 				Environment:    map[string]string{"ENV": "production"},
-				LeafInstances: map[string]*Leaf{
+				LeafInstances: map[string]*models.Leaf{
 					"leaf-1": {
 						ID:            "leaf-1",
 						PID:           1234,
 						HAProxyServer: "haproxy-system",
 						Port:          8081,
-						Status:        StatusUnknown,
+						Status:        models.StatusUnknown,
 						Initialized:   fixedTime,
 					},
 				},
@@ -53,27 +53,27 @@ func initTestStorage() *LeafStorage {
 			},
 			"user-deployment": {
 				Name:           "user-deployment",
-				Type:           StemTypeDeployment,
+				Type:           models.StemTypeDeployment,
 				WorkingURL:     "http://localhost:9090",
 				HAProxyBackend: "haproxy-user",
 				Version:        "1.0.0",
 				Environment:    map[string]string{"DEBUG": "true"},
-				LeafInstances: map[string]*Leaf{
+				LeafInstances: map[string]*models.Leaf{
 					"leaf-1": {
 						ID:            "leaf-1",
 						PID:           5678,
 						HAProxyServer: "haproxy-user",
 						Port:          9091,
-						Status:        StatusUnknown,
+						Status:        models.StatusUnknown,
 						Initialized:   fixedTime,
 					},
 				},
-				GraftNodeLeaf: &Leaf{
+				GraftNodeLeaf: &models.Leaf{
 					ID:            "graft-leaf",
 					PID:           0,
 					HAProxyServer: "haproxy-user",
 					Port:          9092,
-					Status:        StatusUnknown,
+					Status:        models.StatusUnknown,
 					Initialized:   fixedTime,
 				},
 				Config: &models.ServiceConfig{
@@ -103,6 +103,6 @@ func initTestStorage() *LeafStorage {
 }
 
 // Helper function to get a fresh copy for testing
-func GetTestStorage() *LeafStorage {
+func GetTestStorage() *HerbariumDB {
 	return initTestStorage()
 }

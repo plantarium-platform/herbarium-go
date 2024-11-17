@@ -1,4 +1,4 @@
-package repositories
+package repos
 
 import (
 	"fmt"
@@ -10,18 +10,18 @@ import (
 type StemRepositoryInterface interface {
 	AddStem(name, stemType, workingURL, haproxyBackend, version string, envVars map[string]string, config *models.ServiceConfig) error
 	RemoveStem(name string) error
-	FindStemByName(name string) (*storage.Stem, error)
-	ListStems() ([]*storage.Stem, error)
+	FindStemByName(name string) (*models.Stem, error)
+	ListStems() ([]*models.Stem, error)
 	ReplaceStem(name, newVersion string, newConfig *models.ServiceConfig) error
 }
 
 // StemRepository is an implementation of StemRepositoryInterface.
 type StemRepository struct {
-	storage *storage.LeafStorage
+	storage *storage.HerbariumDB
 }
 
 // NewStemRepository initializes a new StemRepository with the provided storage.
-func NewStemRepository(storage *storage.LeafStorage) *StemRepository {
+func NewStemRepository(storage *storage.HerbariumDB) *StemRepository {
 	return &StemRepository{
 		storage: storage,
 	}
@@ -36,14 +36,14 @@ func (r *StemRepository) AddStem(name, stemType, workingURL, haproxyBackend, ver
 			return fmt.Errorf("stem %s already exists", name)
 		}
 
-		r.storage.Stems[name] = &storage.Stem{
+		r.storage.Stems[name] = &models.Stem{
 			Name:           name,
-			Type:           storage.StemType(stemType),
+			Type:           models.StemType(stemType),
 			WorkingURL:     workingURL,
 			HAProxyBackend: haproxyBackend,
 			Version:        version,
 			Environment:    envVars,
-			LeafInstances:  make(map[string]*storage.Leaf),
+			LeafInstances:  make(map[string]*models.Leaf),
 			Config:         config,
 		}
 
@@ -64,8 +64,8 @@ func (r *StemRepository) RemoveStem(name string) error {
 }
 
 // FindStemByName retrieves a stem by its name.
-func (r *StemRepository) FindStemByName(name string) (*storage.Stem, error) {
-	var stem *storage.Stem
+func (r *StemRepository) FindStemByName(name string) (*models.Stem, error) {
+	var stem *models.Stem
 	err := r.storage.WithRLock(func() error {
 		var exists bool
 		stem, exists = r.storage.Stems[name]
@@ -78,10 +78,10 @@ func (r *StemRepository) FindStemByName(name string) (*storage.Stem, error) {
 }
 
 // ListStems lists all stems in the storage.
-func (r *StemRepository) ListStems() ([]*storage.Stem, error) {
-	var stems []*storage.Stem
+func (r *StemRepository) ListStems() ([]*models.Stem, error) {
+	var stems []*models.Stem
 	err := r.storage.WithRLock(func() error {
-		stems = make([]*storage.Stem, 0, len(r.storage.Stems))
+		stems = make([]*models.Stem, 0, len(r.storage.Stems))
 		for _, stem := range r.storage.Stems {
 			stems = append(stems, stem)
 		}

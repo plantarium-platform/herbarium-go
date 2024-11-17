@@ -1,4 +1,4 @@
-package repositories
+package repos
 
 import (
 	"github.com/plantarium-platform/herbarium-go/internal/storage"
@@ -11,7 +11,7 @@ func TestStemRepository_AddStem(t *testing.T) {
 	repo := NewStemRepository(testStorage)
 
 	// Add a new stem
-	err := repo.AddStem("test-stem", string(storage.StemTypeDeployment), "http://localhost:7070",
+	err := repo.AddStem("test-stem", string(models.StemTypeDeployment), "http://localhost:7070",
 		"haproxy-test", "1.0.1", map[string]string{"TEST_ENV": "true"}, &models.ServiceConfig{})
 	if err != nil {
 		t.Fatalf("failed to add stem: %v", err)
