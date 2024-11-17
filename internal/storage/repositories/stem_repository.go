@@ -3,15 +3,16 @@ package repositories
 import (
 	"fmt"
 	"github.com/plantarium-platform/herbarium-go/internal/storage"
+	"github.com/plantarium-platform/herbarium-go/pkg/models"
 )
 
 // StemRepositoryInterface defines methods for managing stems.
 type StemRepositoryInterface interface {
-	AddStem(name, stemType, workingURL, haproxyBackend, version string, envVars map[string]string, config *storage.ServiceConfig) error
+	AddStem(name, stemType, workingURL, haproxyBackend, version string, envVars map[string]string, config *models.ServiceConfig) error
 	RemoveStem(name string) error
 	FindStemByName(name string) (*storage.Stem, error)
 	ListStems() ([]*storage.Stem, error)
-	ReplaceStem(name, newVersion string, newConfig *storage.ServiceConfig) error
+	ReplaceStem(name, newVersion string, newConfig *models.ServiceConfig) error
 }
 
 // StemRepository is an implementation of StemRepositoryInterface.
@@ -28,7 +29,7 @@ func NewStemRepository(storage *storage.LeafStorage) *StemRepository {
 
 // AddStem adds a new stem to the storage.
 func (r *StemRepository) AddStem(name, stemType, workingURL, haproxyBackend, version string,
-	envVars map[string]string, config *storage.ServiceConfig) error {
+	envVars map[string]string, config *models.ServiceConfig) error {
 
 	return r.storage.WithLock(func() error {
 		if _, exists := r.storage.Stems[name]; exists {
@@ -90,7 +91,7 @@ func (r *StemRepository) ListStems() ([]*storage.Stem, error) {
 }
 
 // ReplaceStem replaces an existing stem with a new version.
-func (r *StemRepository) ReplaceStem(name, newVersion string, newConfig *storage.ServiceConfig) error {
+func (r *StemRepository) ReplaceStem(name, newVersion string, newConfig *models.ServiceConfig) error {
 	return r.storage.WithLock(func() error {
 		stem, exists := r.storage.Stems[name]
 		if !exists {

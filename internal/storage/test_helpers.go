@@ -1,6 +1,9 @@
 package storage
 
-import "time"
+import (
+	"github.com/plantarium-platform/herbarium-go/pkg/models"
+	"time"
+)
 
 func initTestStorage() *LeafStorage {
 	// Create fixed timestamp for consistent test data
@@ -26,7 +29,7 @@ func initTestStorage() *LeafStorage {
 						Initialized:   fixedTime,
 					},
 				},
-				Config: &ServiceConfig{
+				Config: &models.ServiceConfig{
 					Services: []struct {
 						Name         string            `yaml:"name"`
 						URL          string            `yaml:"url"`
@@ -73,7 +76,7 @@ func initTestStorage() *LeafStorage {
 					Status:        StatusUnknown,
 					Initialized:   fixedTime,
 				},
-				Config: &ServiceConfig{
+				Config: &models.ServiceConfig{
 					Services: []struct {
 						Name         string            `yaml:"name"`
 						URL          string            `yaml:"url"`

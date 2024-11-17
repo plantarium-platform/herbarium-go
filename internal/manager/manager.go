@@ -2,6 +2,7 @@ package manager
 
 import (
 	"fmt"
+	"github.com/plantarium-platform/herbarium-go/pkg/models"
 	"gopkg.in/yaml.v2"
 	"log"
 	"os"
@@ -10,24 +11,9 @@ import (
 	"strings"
 )
 
-// ServiceConfig represents a service configuration structure.
-type ServiceConfig struct {
-	Services []struct {
-		Name         string            `yaml:"name"`
-		URL          string            `yaml:"url"`
-		Command      string            `yaml:"command"`
-		Env          map[string]string `yaml:"env"`
-		Dependencies []struct {
-			Name   string `yaml:"name"`
-			Schema string `yaml:"schema"`
-		} `yaml:"dependencies"`
-		Version string `yaml:"version"`
-	} `yaml:"services"`
-}
-
 // Service represents a service with its config and version path.
 type Service struct {
-	Config     ServiceConfig
+	Config     models.ServiceConfig
 	VersionDir string
 }
 
@@ -76,7 +62,7 @@ func (m *Manager) GetServiceConfigurations() ([]Service, error) {
 			}
 			defer configFile.Close()
 
-			var config ServiceConfig
+			var config models.ServiceConfig
 			if err := yaml.NewDecoder(configFile).Decode(&config); err != nil {
 				log.Printf("Error decoding YAML for %s: %v", configFilePath, err)
 				continue
