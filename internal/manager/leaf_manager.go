@@ -41,3 +41,11 @@ func (l *LeafManager) GetRunningLeafs(stemName, version string) ([]models.Leaf, 
 	// Method signature only - no implementation here.
 	return nil, nil
 }
+
+// startLeafInternal starts the leaf instance for the given parameters.
+// This is a stub for testing purposes.
+func (l *LeafManager) startLeafInternal(stemName, stemVersion, leafID string, leafPort int, config *models.StemConfig) error {
+	// For now, we're just returning nil to simulate the leaf start process.
+	// The real logic for starting the leaf will go here.
+	return nil
+}

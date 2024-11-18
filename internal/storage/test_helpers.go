@@ -29,24 +29,19 @@ func initTestStorage() *HerbariumDB {
 						Initialized:   fixedTime,
 					},
 				},
-				Config: &models.ServiceConfig{
-					Services: []struct {
-						Name         string            `yaml:"name"`
-						URL          string            `yaml:"url"`
-						Command      string            `yaml:"command"`
-						Env          map[string]string `yaml:"env"`
-						Dependencies []struct {
-							Name   string `yaml:"name"`
-							Schema string `yaml:"schema"`
-						} `yaml:"dependencies"`
-						Version string `yaml:"version"`
+				Config: &models.StemConfig{
+					Name:    "system-service",
+					URL:     "http://localhost:8080",
+					Command: "./start.sh",
+					Env:     map[string]string{"ENV": "production"},
+					Version: "1.0.0",
+					Dependencies: []struct {
+						Name   string `yaml:"name"`
+						Schema string `yaml:"schema"`
 					}{
 						{
-							Name:    "system-service",
-							URL:     "http://localhost:8080",
-							Command: "./start.sh",
-							Env:     map[string]string{"ENV": "production"},
-							Version: "1.0.0",
+							Name:   "postgres",
+							Schema: "prod",
 						},
 					},
 				},
@@ -76,24 +71,19 @@ func initTestStorage() *HerbariumDB {
 					Status:        models.StatusUnknown,
 					Initialized:   fixedTime,
 				},
-				Config: &models.ServiceConfig{
-					Services: []struct {
-						Name         string            `yaml:"name"`
-						URL          string            `yaml:"url"`
-						Command      string            `yaml:"command"`
-						Env          map[string]string `yaml:"env"`
-						Dependencies []struct {
-							Name   string `yaml:"name"`
-							Schema string `yaml:"schema"`
-						} `yaml:"dependencies"`
-						Version string `yaml:"version"`
+				Config: &models.StemConfig{
+					Name:    "user-deployment",
+					URL:     "http://localhost:9090",
+					Command: "./run.sh",
+					Env:     map[string]string{"DEBUG": "true"},
+					Version: "1.0.0",
+					Dependencies: []struct {
+						Name   string `yaml:"name"`
+						Schema string `yaml:"schema"`
 					}{
 						{
-							Name:    "user-deployment",
-							URL:     "http://localhost:9090",
-							Command: "./run.sh",
-							Env:     map[string]string{"DEBUG": "true"},
-							Version: "1.0.0",
+							Name:   "postgres",
+							Schema: "test",
 						},
 					},
 				},

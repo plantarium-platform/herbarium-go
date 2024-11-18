@@ -77,9 +77,9 @@ func TestPlatformManager_GetServiceConfigurations(t *testing.T) {
 	assert.Equal(t, 1, len(services), "Expected 1 service configuration")
 
 	helloService := services[0]
-	assert.Equal(t, "hello-service", helloService.Config.Services[0].Name, "Expected service name 'hello-service'")
-	assert.Equal(t, "/hello", helloService.Config.Services[0].URL, "Expected URL '/hello'")
-	assert.Equal(t, "java -jar hello-service.jar", helloService.Config.Services[0].Command, "Expected command to run the service")
-	assert.Equal(t, "production", helloService.Config.Services[0].Env["GLOBAL_VAR"], "Expected GLOBAL_VAR to be 'production'")
-	assert.Equal(t, "test", helloService.Config.Services[0].Dependencies[0].Schema, "Expected dependency schema 'test'")
+	assert.Equal(t, "hello-service", helloService.Config.Name, "Expected service name 'hello-service'")
+	assert.Equal(t, "/hello", helloService.Config.URL, "Expected URL '/hello'")
+	assert.Equal(t, "java -jar hello-service.jar", helloService.Config.Command, "Expected command to run the service")
+	assert.Equal(t, "production", helloService.Config.Env["GLOBAL_VAR"], "Expected GLOBAL_VAR to be 'production'")
+	assert.Equal(t, "test", helloService.Config.Dependencies[0].Schema, "Expected dependency schema 'test'")
 }

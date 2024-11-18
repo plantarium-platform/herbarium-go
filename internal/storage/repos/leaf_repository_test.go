@@ -12,7 +12,7 @@ func TestStemRepository_AddStem(t *testing.T) {
 
 	// Add a new stem
 	err := repo.AddStem("test-stem", string(models.StemTypeDeployment), "http://localhost:7070",
-		"haproxy-test", "1.0.1", map[string]string{"TEST_ENV": "true"}, &models.ServiceConfig{})
+		"haproxy-test", "1.0.1", map[string]string{"TEST_ENV": "true"}, &models.StemConfig{})
 	if err != nil {
 		t.Fatalf("failed to add stem: %v", err)
 	}
@@ -102,7 +102,7 @@ func TestStemRepository_ReplaceStem(t *testing.T) {
 	repo := NewStemRepository(testStorage)
 
 	// Replace an existing stem with a new version
-	err := repo.ReplaceStem("user-deployment", "1.1.0", &models.ServiceConfig{})
+	err := repo.ReplaceStem("user-deployment", "1.1.0", &models.StemConfig{})
 	if err != nil {
 		t.Fatalf("failed to replace stem: %v", err)
 	}

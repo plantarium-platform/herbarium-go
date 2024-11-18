@@ -8,11 +8,11 @@ import (
 
 // StemRepositoryInterface defines methods for managing stems.
 type StemRepositoryInterface interface {
-	AddStem(name, stemType, workingURL, haproxyBackend, version string, envVars map[string]string, config *models.ServiceConfig) error
+	AddStem(name, stemType, workingURL, haproxyBackend, version string, envVars map[string]string, config *models.StemConfig) error
 	RemoveStem(name string) error
 	FindStemByName(name string) (*models.Stem, error)
 	ListStems() ([]*models.Stem, error)
-	ReplaceStem(name, newVersion string, newConfig *models.ServiceConfig) error
+	ReplaceStem(name, newVersion string, newConfig *models.StemConfig) error
 }
 
 // StemRepository is an implementation of StemRepositoryInterface.
@@ -29,7 +29,7 @@ func NewStemRepository(storage *storage.HerbariumDB) *StemRepository {
 
 // AddStem adds a new stem to the storage.
 func (r *StemRepository) AddStem(name, stemType, workingURL, haproxyBackend, version string,
-	envVars map[string]string, config *models.ServiceConfig) error {
+	envVars map[string]string, config *models.StemConfig) error {
 
 	return r.storage.WithLock(func() error {
 		if _, exists := r.storage.Stems[name]; exists {
@@ -91,7 +91,7 @@ func (r *StemRepository) ListStems() ([]*models.Stem, error) {
 }
 
 // ReplaceStem replaces an existing stem with a new version.
-func (r *StemRepository) ReplaceStem(name, newVersion string, newConfig *models.ServiceConfig) error {
+func (r *StemRepository) ReplaceStem(name, newVersion string, newConfig *models.StemConfig) error {
 	return r.storage.WithLock(func() error {
 		stem, exists := r.storage.Stems[name]
 		if !exists {

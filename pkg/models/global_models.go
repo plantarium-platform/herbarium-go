@@ -2,19 +2,17 @@ package models
 
 import "time"
 
-// ServiceConfig represents the configuration for a service, parsed from a YAML file.
-type ServiceConfig struct {
-	Services []struct {
-		Name         string            `yaml:"name"`    // Service name
-		URL          string            `yaml:"url"`     // Service URL
-		Command      string            `yaml:"command"` // Command to start the service
-		Env          map[string]string `yaml:"env"`     // Environment variables
-		Dependencies []struct {        // Service dependencies
-			Name   string `yaml:"name"`   // Dependency name
-			Schema string `yaml:"schema"` // Dependency schema
-		} `yaml:"dependencies"`
-		Version string `yaml:"version"` // Service version
-	} `yaml:"services"`
+// StemConfig represents the configuration for a service, parsed from a YAML file.
+type StemConfig struct {
+	Name         string            `yaml:"name"`    // Service name
+	URL          string            `yaml:"url"`     // Service URL
+	Command      string            `yaml:"command"` // Command to start the service
+	Env          map[string]string `yaml:"env"`     // Environment variables
+	Dependencies []struct {        // Service dependencies
+		Name   string `yaml:"name"`   // Dependency name
+		Schema string `yaml:"schema"` // Dependency schema
+	} `yaml:"dependencies"`
+	Version string `yaml:"version"` // Service version
 }
 
 // Stem represents a deployment with associated leaf instances and configuration.
@@ -27,7 +25,7 @@ type Stem struct {
 	Environment    map[string]string // Environment variables (key-value pairs)
 	LeafInstances  map[string]*Leaf  // Active leaf instances (keyed by LeafID)
 	GraftNodeLeaf  *Leaf             // Placeholder leaf if no real instances exist
-	Config         *ServiceConfig    // Parsed service configuration
+	Config         *StemConfig       // Parsed service configuration
 }
 
 // Leaf represents a single running instance of a service.

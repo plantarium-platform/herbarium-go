@@ -24,7 +24,7 @@ type PlatformManagerInterface interface {
 
 // Service represents a service with its configuration and version directory.
 type Service struct {
-	Config     models.ServiceConfig
+	Config     models.StemConfig
 	VersionDir string
 }
 
@@ -103,7 +103,7 @@ func (p *PlatformManager) GetServiceConfigurations() ([]Service, error) {
 			}
 			defer configFile.Close()
 
-			var config models.ServiceConfig
+			var config models.StemConfig
 			if err := yaml.NewDecoder(configFile).Decode(&config); err != nil {
 				log.Printf("Error decoding YAML for %s: %v", configFilePath, err)
 				continue
@@ -114,7 +114,7 @@ func (p *PlatformManager) GetServiceConfigurations() ([]Service, error) {
 				VersionDir: currentPath,
 			}
 			services = append(services, service)
-			log.Printf("Loaded configuration for service: %s, version directory: %s", config.Services[0].Name, currentPath)
+			log.Printf("Loaded configuration for service: %s, version directory: %s", config.Name, currentPath)
 		}
 	}
 
