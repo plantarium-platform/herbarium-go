@@ -44,3 +44,38 @@ func (m *MockLeafManager) GetRunningLeafs(stemName, version string) ([]models.Le
 	args := m.Called(stemName, version)
 	return args.Get(0).([]models.Leaf), args.Error(1)
 }
+
+// MockHAProxyClient is a mock implementation of HAProxyClientInterface.
+type MockHAProxyClient struct {
+	mock.Mock
+}
+
+// BindStem mocks the BindStem method in HAProxyClient.
+func (m *MockHAProxyClient) BindStem(backendName string) error {
+	args := m.Called(backendName)
+	return args.Error(0)
+}
+
+// BindLeaf mocks the BindLeaf method in HAProxyClient.
+func (m *MockHAProxyClient) BindLeaf(backendName, haProxyServer, serviceAddress string, servicePort int) error {
+	args := m.Called(backendName, haProxyServer, serviceAddress, servicePort)
+	return args.Error(0)
+}
+
+// UnbindLeaf mocks the UnbindLeaf method in HAProxyClient.
+func (m *MockHAProxyClient) UnbindLeaf(backendName, haProxyServer string) error {
+	args := m.Called(backendName, haProxyServer)
+	return args.Error(0)
+}
+
+// ReplaceLeaf mocks the ReplaceLeaf method in HAProxyClient.
+func (m *MockHAProxyClient) ReplaceLeaf(backendName, oldHAProxyServer, newHAProxyServer, serviceAddress string, servicePort int) error {
+	args := m.Called(backendName, oldHAProxyServer, newHAProxyServer, serviceAddress, servicePort)
+	return args.Error(0)
+}
+
+// UnbindStem mocks the UnbindStem method in HAProxyClient.
+func (m *MockHAProxyClient) UnbindStem(backendName string) error {
+	args := m.Called(backendName)
+	return args.Error(0)
+}
