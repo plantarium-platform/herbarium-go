@@ -8,13 +8,26 @@ import (
 	"strconv"
 )
 
+// HAProxyServer struct represents a backend server in HAProxy.
 type HAProxyServer struct {
 	Name    string `json:"name"`
 	Address string `json:"address"`
 	Port    int    `json:"port"`
 }
 
-// HAProxyConfigurationManager provides low-level functions for managing the HAProxy configuration.
+// HAProxyConfigurationManagerInterface defines the methods for managing HAProxy configuration.
+type HAProxyConfigurationManagerInterface interface {
+	GetCurrentConfigVersion() (int64, error)
+	StartTransaction(version int64) (string, error)
+	CommitTransaction(transactionID string) error
+	RollbackTransaction(transactionID string) error
+	CreateBackend(backendName, transactionID string) error
+	AddServer(backendName string, serverData map[string]interface{}, transactionID string) error
+	DeleteServer(backendName, serverName, transactionID string) error
+	GetServersFromBackend(backendName, transactionID string) ([]HAProxyServer, error)
+}
+
+// HAProxyConfigurationManager is the concrete implementation of HAProxyConfigurationManagerInterface.
 type HAProxyConfigurationManager struct {
 	client *resty.Client
 }
@@ -122,7 +135,7 @@ func (c *HAProxyConfigurationManager) CreateBackend(backendName, transactionID s
 			return fmt.Errorf("failed to create backend: %v", err)
 		}
 
-		fmt.Printf("Backend %s created successfully\n", backendName)
+		log.Printf("Backend %s created successfully\n", backendName)
 	} else if resp.StatusCode() != 200 {
 		return fmt.Errorf("failed to check backend, status code: %d, response: %s", resp.StatusCode(), resp.String())
 	}

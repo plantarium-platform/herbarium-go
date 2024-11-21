@@ -8,9 +8,11 @@ import (
 // TransactionMiddleware is a middleware that manages transactions for HAProxy operations.
 type TransactionMiddleware func(next func(transactionID string) error) func() error
 
-func NewTransactionMiddleware(configManager *HAProxyConfigurationManager) TransactionMiddleware {
+// NewTransactionMiddleware creates a new TransactionMiddleware using the provided configManager interface.
+func NewTransactionMiddleware(configManager HAProxyConfigurationManagerInterface) TransactionMiddleware {
 	return func(next func(transactionID string) error) func() error {
 		return func() error {
+			// Retrieve the current config version using the interface method
 			cfgVer, err := configManager.GetCurrentConfigVersion()
 			if err != nil {
 				log.Printf("[ERROR] Failed to get config version: %v", err)
@@ -18,6 +20,7 @@ func NewTransactionMiddleware(configManager *HAProxyConfigurationManager) Transa
 			}
 			log.Printf("[INFO] Got config version: %d", cfgVer)
 
+			// Start the transaction using the interface method
 			transactionID, err := configManager.StartTransaction(cfgVer)
 			if err != nil {
 				log.Printf("[ERROR] Failed to start transaction: %v", err)
@@ -27,6 +30,7 @@ func NewTransactionMiddleware(configManager *HAProxyConfigurationManager) Transa
 
 			var executionErr error
 			defer func() {
+				// Rollback or commit the transaction depending on execution outcome
 				if executionErr != nil {
 					log.Printf("[ERROR] Rolling back transaction %s: %v", transactionID, executionErr)
 					configManager.RollbackTransaction(transactionID)

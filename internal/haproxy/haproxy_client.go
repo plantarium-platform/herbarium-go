@@ -22,14 +22,12 @@ type HAProxyConfig struct {
 
 // HAProxyClient provides a high-level interface for managing the HAProxy configuration.
 type HAProxyClient struct {
-	configManager         *HAProxyConfigurationManager
+	configManager         HAProxyConfigurationManagerInterface // Using the interface here
 	transactionMiddleware TransactionMiddleware
 }
 
 // NewHAProxyClient initializes and returns an HAProxyClient that implements HAProxyClientInterface.
-func NewHAProxyClient(config HAProxyConfig) HAProxyClientInterface {
-	// Initialize the configuration manager with provided parameters
-	configManager := NewHAProxyConfigurationManager(config.APIURL, config.Username, config.Password)
+func NewHAProxyClient(config HAProxyConfig, configManager HAProxyConfigurationManagerInterface) HAProxyClientInterface {
 	transactionMiddleware := NewTransactionMiddleware(configManager)
 
 	// Return the client with the necessary configurations
