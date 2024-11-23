@@ -40,8 +40,8 @@ func (m *MockHAProxyConfigurationManager) CreateBackend(backendName, transaction
 }
 
 // AddServer mocks the AddServer method
-func (m *MockHAProxyConfigurationManager) AddServer(backendName string, serverData map[string]interface{}, transactionID string) error {
-	args := m.Called(backendName, serverData, transactionID)
+func (m *MockHAProxyConfigurationManager) AddServer(backendName, serverName, serviceAddress, transactionID string) error {
+	args := m.Called(backendName, serverName, serviceAddress, transactionID)
 	return args.Error(0)
 }
 

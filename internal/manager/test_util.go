@@ -35,8 +35,8 @@ func (m *MockLeafManager) StartLeaf(stemName, version string) (string, error) {
 	return args.String(0), args.Error(1)
 }
 
-func (m *MockLeafManager) StopLeaf(leafID string) error {
-	args := m.Called(leafID)
+func (m *MockLeafManager) StopLeaf(stemName, version, leafID string) error {
+	args := m.Called(stemName, version, leafID)
 	return args.Error(0)
 }
 

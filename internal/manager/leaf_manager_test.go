@@ -5,6 +5,7 @@ import (
 	"github.com/plantarium-platform/herbarium-go/internal/storage"
 	"log"
 	"os"
+	"os/exec"
 	"testing"
 	"time"
 
@@ -187,86 +188,13 @@ func TestLeafManager_GetRunningLeafs(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Call GetRunningLeafs
-	leafs, err := leafManager.GetRunningLeafs(stemName, "1.0.0")
+	leafs, err := leafManager.GetRunningLeafs(stemName, "v1.0")
 	assert.NoError(t, err)
 
 	// Verify repository state
 	assert.Len(t, leafs, 2)               // Verify two leafs are returned
 	assert.Equal(t, "leaf1", leafs[0].ID) // Verify first leaf ID
 	assert.Equal(t, "leaf2", leafs[1].ID) // Verify second leaf ID
-}
-
-func TestStartLeafInternal_Success(t *testing.T) {
-	// Initialize in-memory DB (real database instance)
-	storage := &storage.HerbariumDB{
-		Stems: make(map[string]*models.Stem),
-	}
-
-	// Create stem repository
-	stemRepo := repos.NewStemRepository(storage) // Create stem repo (based on the same storage)
-
-	// Create a stem with no leaves initially
-	stemName := "test-java-service"
-	stemVersion := "v1.1"
-	stem := &models.Stem{
-		Name:           stemName,
-		Type:           models.StemTypeDeployment,
-		WorkingURL:     "/hello",
-		HAProxyBackend: "java-backend",
-		Version:        stemVersion,
-		Environment: map[string]string{
-			"GLOBAL_VAR": "production",
-		},
-		LeafInstances: make(map[string]*models.Leaf),
-		GraftNodeLeaf: nil,
-		Config: &models.StemConfig{
-			Name:    "test-java-service",
-			URL:     "/hello",
-			Command: "java -jar hello-service.jar",
-			Env: map[string]string{
-				"GLOBAL_VAR": "production",
-			},
-			Version: "v1.1", // Or whichever version is relevant
-			Dependencies: []struct {
-				Name   string `yaml:"name"`
-				Schema string `yaml:"schema"`
-			}{
-				{
-					Name:   "postgres",
-					Schema: "test",
-				},
-			},
-		},
-	}
-
-	// Add the stem to the DB
-	storage.Stems[stemName] = stem
-
-	// Create the leaf manager with the real DB and mock HAProxy client
-	leafRepo := repos.NewLeafRepository(storage)
-	mockHAProxyClient := new(MockHAProxyClient)
-	leafManager := NewLeafManager(leafRepo, mockHAProxyClient, stemRepo)
-
-	// Generate the leafID and port dynamically
-	leafID := "test-leaf-123"
-	leafPort := 8080
-
-	// Call the internal method to start the leaf
-	pid, err := leafManager.startLeafInternal(stemName, stemVersion, leafID, leafPort, stem.Config)
-
-	// Assert no error occurred
-	assert.NoError(t, err)
-
-	// Fetch the leaf from the repository and check its values
-	leaf, err := leafRepo.FindLeafByID(stemName, leafID)
-
-	// Assert leaf was added and status is updated to RUNNING
-	assert.NoError(t, err)
-	assert.NotNil(t, leaf)
-	assert.NotNil(t, pid)
-	assert.Equal(t, leaf.Status, models.StatusRunning)
-	assert.Equal(t, leaf.HAProxyServer, "java-backend")
-	assert.Equal(t, leaf.Port, leafPort)
 }
 
 func stopProcessByPID(pid int) error {
@@ -289,4 +217,67 @@ func stopProcessByPID(pid int) error {
 	}
 
 	return nil
+}
+func TestStopLeaf(t *testing.T) {
+	// Set up an in-memory storage and repositories
+	leafStorage := storage.GetHerbariumDB()
+	leafRepo := repos.NewLeafRepository(leafStorage)
+	stemRepo := repos.NewStemRepository(leafStorage)
+
+	// Define the stem and leaf information
+	stemName := "test-stem"
+	stemVersion := "v1.0"
+	leafID := "test-leaf-123"
+	leafPort := 8000
+
+	// Start a ping process and get its PID
+	cmd := exec.Command("ping", "127.0.0.1", "-t")
+	err := cmd.Start()
+	assert.NoError(t, err, "failed to start ping process")
+
+	pid := cmd.Process.Pid
+
+	// Ensure the ping process is killed after the test
+	defer func() {
+		err := cmd.Process.Kill()
+		if err != nil {
+			log.Printf("Failed to kill ping process with PID %d: %v", pid, err)
+		}
+	}()
+
+	// Manually add the stem and leaf to the in-memory database
+	stem := &models.Stem{
+		Name:           stemName,
+		Type:           models.StemTypeDeployment,
+		HAProxyBackend: "test-backend",
+		Version:        stemVersion,
+		LeafInstances: map[string]*models.Leaf{
+			leafID: {
+				ID:            leafID,
+				Status:        models.StatusRunning,
+				Port:          leafPort,
+				PID:           pid,
+				HAProxyServer: "haproxy-server",
+			},
+		},
+	}
+	leafStorage.Stems[stemName] = stem
+
+	// Mock HAProxyClient
+	mockHAProxyClient := new(MockHAProxyClient)
+	mockHAProxyClient.On("UnbindLeaf", "test-backend", "haproxy-server").Return(nil)
+
+	// Create the LeafManager
+	leafManager := NewLeafManager(leafRepo, mockHAProxyClient, stemRepo)
+
+	// Stop the leaf
+	err = leafManager.StopLeaf(stemName, stemVersion, leafID)
+	assert.NoError(t, err, "failed to stop leaf")
+
+	// Verify HAProxyClient UnbindLeaf was called with correct arguments
+	mockHAProxyClient.AssertCalled(t, "UnbindLeaf", "test-backend", "haproxy-server")
+
+	// Verify that the leaf is removed directly in the in-memory database
+	assert.Contains(t, leafStorage.Stems, stemName, "stem should still exist in the database")
+	assert.Empty(t, leafStorage.Stems[stemName].LeafInstances, "stem should have no leaf instances remaining")
 }

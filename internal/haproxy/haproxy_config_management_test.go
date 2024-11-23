@@ -152,7 +152,7 @@ func TestAddServer(t *testing.T) {
 	}
 
 	// Run the method under test
-	err := manager.AddServer("backend1", map[string]interface{}{"name": "server1", "address": "localhost", "port": 8080}, "txn123")
+	err := manager.AddServer("backend1", "server1", "localhost", "txn123")
 
 	// Assert the result
 	assert.NoError(t, err)

@@ -32,16 +32,15 @@ func TestHAProxyClient_BindStem(t *testing.T) {
 	// Assert that CreateBackend was called with expected arguments
 	mockManager.AssertExpectations(t)
 }
-
 func TestHAProxyClient_BindLeaf(t *testing.T) {
 	// Initialize the mock HAProxyConfigurationManager
 	mockManager := new(MockHAProxyConfigurationManager)
 
 	// Set up the mock methods
-	mockManager.On("GetCurrentConfigVersion").Return(int64(1), nil)    // Mocking GetCurrentConfigVersion
-	mockManager.On("StartTransaction", int64(1)).Return("txn123", nil) // Mock StartTransaction
-	mockManager.On("CommitTransaction", "txn123").Return(nil)          // Mock CommitTransaction
-	mockManager.On("AddServer", "backend1", mock.Anything, mock.Anything).Return(nil)
+	mockManager.On("GetCurrentConfigVersion").Return(int64(1), nil)                            // Mocking GetCurrentConfigVersion
+	mockManager.On("StartTransaction", int64(1)).Return("txn123", nil)                         // Mock StartTransaction
+	mockManager.On("CommitTransaction", "txn123").Return(nil)                                  // Mock CommitTransaction
+	mockManager.On("AddServer", "backend1", "server1", "localhost:8080", "txn123").Return(nil) // Updated AddServer call
 
 	// Create the HAProxyClient with the mock manager
 	client := &HAProxyClient{
@@ -84,17 +83,16 @@ func TestHAProxyClient_UnbindLeaf(t *testing.T) {
 	// Assert that DeleteServer was called with expected arguments
 	mockManager.AssertExpectations(t)
 }
-
 func TestHAProxyClient_ReplaceLeaf(t *testing.T) {
 	// Initialize the mock HAProxyConfigurationManager
 	mockManager := new(MockHAProxyConfigurationManager)
 
 	// Set up the mock methods
-	mockManager.On("GetCurrentConfigVersion").Return(int64(1), nil)    // Mocking GetCurrentConfigVersion
-	mockManager.On("StartTransaction", int64(1)).Return("txn123", nil) // Mock StartTransaction
-	mockManager.On("CommitTransaction", "txn123").Return(nil)          // Mock CommitTransaction
-	mockManager.On("DeleteServer", "backend1", "oldServer", mock.Anything).Return(nil)
-	mockManager.On("AddServer", "backend1", mock.Anything, mock.Anything).Return(nil)
+	mockManager.On("GetCurrentConfigVersion").Return(int64(1), nil)                              // Mocking GetCurrentConfigVersion
+	mockManager.On("StartTransaction", int64(1)).Return("txn123", nil)                           // Mock StartTransaction
+	mockManager.On("CommitTransaction", "txn123").Return(nil)                                    // Mock CommitTransaction
+	mockManager.On("DeleteServer", "backend1", "oldServer", "txn123").Return(nil)                // Updated DeleteServer call
+	mockManager.On("AddServer", "backend1", "newServer", "localhost:8080", "txn123").Return(nil) // Updated AddServer call
 
 	// Create the HAProxyClient with the mock manager
 	client := &HAProxyClient{
