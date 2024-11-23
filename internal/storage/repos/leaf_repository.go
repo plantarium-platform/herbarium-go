@@ -57,7 +57,7 @@ func (r *LeafRepository) AddLeaf(stemName, leafID, haproxyServer string, pid, po
 			PID:           pid,
 			HAProxyServer: haproxyServer,
 			Port:          port,
-			Status:        models.StatusStarting,
+			Status:        models.StatusRunning,
 			Initialized:   initialized,
 		}
 

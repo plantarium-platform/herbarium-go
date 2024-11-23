@@ -3,6 +3,7 @@ module github.com/plantarium-platform/herbarium-go
 go 1.23.2
 
 require (
+	bou.ke/monkey v1.0.2
 	github.com/go-resty/resty/v2 v2.16.0
 	github.com/jarcoal/httpmock v1.3.1
 	github.com/stretchr/testify v1.9.0

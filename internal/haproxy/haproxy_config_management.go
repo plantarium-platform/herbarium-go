@@ -22,7 +22,7 @@ type HAProxyConfigurationManagerInterface interface {
 	CommitTransaction(transactionID string) error
 	RollbackTransaction(transactionID string) error
 	CreateBackend(backendName, transactionID string) error
-	AddServer(backendName string, serverData map[string]interface{}, transactionID string) error
+	AddServer(backendName, serverName, serviceAddress, transactionID string) error
 	DeleteServer(backendName, serverName, transactionID string) error
 	GetServersFromBackend(backendName, transactionID string) ([]HAProxyServer, error)
 }
@@ -144,10 +144,13 @@ func (c *HAProxyConfigurationManager) CreateBackend(backendName, transactionID s
 }
 
 // AddServer adds a new server to the specified backend in the HAProxy configuration.
-func (c *HAProxyConfigurationManager) AddServer(backendName string, serverData map[string]interface{}, transactionID string) error {
+func (c *HAProxyConfigurationManager) AddServer(backendName, serverName, serviceAddress, transactionID string) error {
 	_, err := c.client.R().
 		SetQueryParam("transaction_id", transactionID).
-		SetBody(serverData).
+		SetBody(map[string]interface{}{
+			"name":    serverName,     // Using server name
+			"address": serviceAddress, // The service address (IP + Port)
+		}).
 		Post(fmt.Sprintf("/configuration/backends/%s/servers", backendName))
 	if err != nil {
 		return fmt.Errorf("failed to add server to backend: %v", err)

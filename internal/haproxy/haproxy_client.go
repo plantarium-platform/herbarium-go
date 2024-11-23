@@ -7,7 +7,7 @@ import (
 // HAProxyClientInterface defines the contract for HAProxy client interactions.
 type HAProxyClientInterface interface {
 	BindStem(backendName string) error
-	BindLeaf(backendName, haProxyServer, serviceAddress string, servicePort int) error
+	BindLeaf(backendName, leafID, serviceAddress string, servicePort int) error
 	UnbindLeaf(backendName, haProxyServer string) error
 	ReplaceLeaf(backendName, oldHAProxyServer, newHAProxyServer, serviceAddress string, servicePort int) error
 	UnbindStem(backendName string) error
@@ -50,14 +50,13 @@ func (c *HAProxyClient) BindStem(backendName string) error {
 }
 
 // BindLeaf adds a leaf service to the specified backend using HAProxy server details.
-func (c *HAProxyClient) BindLeaf(backendName, haProxyServer, serviceAddress string, servicePort int) error {
+func (c *HAProxyClient) BindLeaf(backendName, leafID, serviceAddress string, servicePort int) error {
 	return c.transactionMiddleware(func(transactionID string) error {
-		// Add the leaf as a service in the backend
-		err := c.configManager.AddServer(backendName, map[string]interface{}{
-			"name":    haProxyServer, // Using HAProxy server name as the service name
-			"address": serviceAddress,
-			"port":    servicePort,
-		}, transactionID)
+		// Construct service address as IP + port
+		address := fmt.Sprintf("%s:%d", serviceAddress, servicePort)
+
+		// Add the leaf as a service in the backend using leaf ID and service address
+		err := c.configManager.AddServer(backendName, leafID, address, transactionID)
 		if err != nil {
 			return fmt.Errorf("failed to bind leaf service: %v", err)
 		}
@@ -82,16 +81,13 @@ func (c *HAProxyClient) ReplaceLeaf(backendName, oldHAProxyServer, newHAProxySer
 	return c.transactionMiddleware(func(transactionID string) error {
 		// Remove the old leaf service
 		err := c.configManager.DeleteServer(backendName, oldHAProxyServer, transactionID)
+		address := fmt.Sprintf("%s:%d", serviceAddress, servicePort)
 		if err != nil {
 			return fmt.Errorf("failed to remove old leaf service: %v", err)
 		}
 
-		// Add the new leaf service
-		err = c.configManager.AddServer(backendName, map[string]interface{}{
-			"name":    newHAProxyServer,
-			"address": serviceAddress,
-			"port":    servicePort,
-		}, transactionID)
+		// Add the new leaf service with individual arguments (not a map)
+		err = c.configManager.AddServer(backendName, newHAProxyServer, address, transactionID)
 		if err != nil {
 			return fmt.Errorf("failed to add new leaf service: %v", err)
 		}
