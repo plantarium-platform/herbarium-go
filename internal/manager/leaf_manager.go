@@ -53,6 +53,7 @@ func findAvailablePort(startPort int) (int, error) {
 // Steps:
 //
 //  1. **Generate a Unique Leaf ID**: A unique identifier for the leaf instance is crea
+//
 //  1. **Generate a Unique Leaf ID**: A unique identifier for the leaf instance is created
 //     based on the stem name, version, and the current timestamp. This ensures each instance
 //     has a distinct ID for identification purposes.
@@ -213,7 +214,6 @@ func (l *LeafManager) GetRunningLeafs(stemName, version string) ([]models.Leaf, 
 	return runningLeafs, nil
 }
 
-// StartLeafInternal starts the leaf instance for the given parameters and manages log redirection and cleanup.
 func (l *LeafManager) startLeafInternal(stemName, stemVersion, leafID string, leafPort int, config *models.StemConfig) (int, error) {
 	// Split the command into the executable (first word) and its arguments
 	commandParts := strings.Fields(config.Command)
@@ -241,6 +241,9 @@ func (l *LeafManager) startLeafInternal(stemName, stemVersion, leafID string, le
 
 	// Create the command to execute
 	cmd := exec.Command(executable, args...)
+
+	// Log the command to be executed
+	log.Printf("Executing command: %s %s", executable, strings.Join(args, " "))
 
 	// Open the log file for writing
 	logFileHandle, err := os.Create(logFile)

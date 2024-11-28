@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"runtime"
 	"testing"
 	"time"
 
@@ -60,7 +61,7 @@ func TestStartLeafWithPingService(t *testing.T) {
 		Config: &models.StemConfig{
 			Name:    "ping-service",
 			URL:     "/ping",
-			Command: "ping 127.0.0.1 -t", // Using localhost to avoid external dependencies
+			Command: determinePingCommand(),
 			Env: map[string]string{
 				"GLOBAL_VAR": "production",
 			},
@@ -141,6 +142,15 @@ func TestStartLeafWithPingService(t *testing.T) {
 	})
 }
 
+func determinePingCommand() string {
+	switch runtime.GOOS {
+	case "windows":
+		return "ping 127.0.0.1 -t" // Endless ping for Windows
+	default:
+		return "ping 127.0.0.1" // Endless ping for Linux (default behavior)
+	}
+}
+
 func TestLeafManager_GetRunningLeafs(t *testing.T) {
 	// Set up real in-memory repository
 	leafStorage := storage.GetHerbariumDB() // Access singleton HerbariumDB
@@ -166,7 +176,7 @@ func TestLeafManager_GetRunningLeafs(t *testing.T) {
 		Config: &models.StemConfig{
 			Name:    "ping-service",
 			URL:     "/ping",
-			Command: "ping 127.0.0.1", // Using localhost to avoid external dependencies
+			Command: determinePingCommand(), // Dynamically set the ping command
 			Env: map[string]string{
 				"GLOBAL_VAR": "production",
 			},
