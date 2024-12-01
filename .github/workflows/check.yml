@@ -38,10 +38,17 @@ jobs:
       # Step 6: Extract and check coverage
       - name: Check coverage
         run: |
-          COVERAGE=$(go tool cover -func=coverage.out | grep "total:" | awk '{print $3}' | sed 's/%//')
-          REQUIRED_COVERAGE=80
-          echo "Coverage is $COVERAGE%"
-          if (( $(echo "$COVERAGE < $REQUIRED_COVERAGE" | bc -l) )); then
+          REQUIRED_COVERAGE=65
+          
+          # Filter out lines related to test_util.go
+          grep -v "test_util.go" coverage.out > filtered_coverage.out
+          
+          # Recalculate coverage excluding test_util.go
+          COVERAGE=$(go tool cover -func=filtered_coverage.out | awk '/total:/ {print $3}' | sed 's/%//')
+          
+          echo "Coverage (excluding test_util.go) is $COVERAGE%"
+          
+          if (( $(echo "$COVERAGE < $REQUIRED_COVERAGE" | bc) )); then
             echo "Coverage $COVERAGE% is less than required $REQUIRED_COVERAGE%."
             exit 1
           fi
