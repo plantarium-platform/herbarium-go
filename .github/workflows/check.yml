@@ -1,4 +1,4 @@
-name: Build and Test Go Application
+name: Build, Test, and Check Coverage
 
 on:
   push:
@@ -31,12 +31,24 @@ jobs:
       - name: Build the application
         run: go build -v ./...
 
-      # Step 5: Run tests
-      - name: Run tests
-        run: go test -v ./... -json > TestResults-1.23.x.json
+      # Step 5: Run tests and generate coverage report
+      - name: Run tests with coverage
+        run: go test ./... -coverprofile=coverage.out
 
+      # Step 6: Extract and check coverage
+      - name: Check coverage
+        run: |
+          COVERAGE=$(go tool cover -func=coverage.out | grep "total:" | awk '{print $3}' | sed 's/%//')
+          REQUIRED_COVERAGE=80
+          echo "Coverage is $COVERAGE%"
+          if (( $(echo "$COVERAGE < $REQUIRED_COVERAGE" | bc -l) )); then
+            echo "Coverage $COVERAGE% is less than required $REQUIRED_COVERAGE%."
+            exit 1
+          fi
+
+      # Step 7: Upload test results and coverage report
       - name: Upload Go test results
         uses: actions/upload-artifact@v4
         with:
-          name: Go-results-1.23.x
-          path: TestResults-1.23.x.json
+          name: Go-test-results
+          path: coverage.out

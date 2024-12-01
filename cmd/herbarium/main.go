@@ -1,26 +1,33 @@
-package herbarium
+package main
 
 import (
 	"fmt"
+	"log"
+
 	"github.com/plantarium-platform/herbarium-go/internal/manager"
 	"github.com/plantarium-platform/herbarium-go/internal/storage"
 	"github.com/plantarium-platform/herbarium-go/internal/storage/repos"
-	"log"
 )
 
 func main() {
-	// Set up in-memory storage
-	stemStorage := &storage.HerbariumDB{} // Assuming HerbariumDB is an in-memory database for testing purposes
+	// Initialize in-memory storage
+	stemStorage := storage.GetHerbariumDB() // Singleton HerbariumDB instance
 
-	// Initialize the repositories
+	// Initialize repositories
 	stemRepo := repos.NewStemRepository(stemStorage)
-	mockLeafManager := new(manager.MockLeafManager)
+	leafRepo := repos.NewLeafRepository(stemStorage)
 
-	// Create the StemManager instance
-	stemManager := manager.NewStemManager(stemRepo, mockLeafManager)
+	// Create MockHAProxyClient (assuming it lives in the same package as mocks)
+	mockHAProxyClient := new(manager.MockHAProxyClient)
 
-	// Create the PlatformManager instance
-	platformManager := manager.NewPlatformManager(stemManager, mockLeafManager, "/path/to/your/base")
+	// Create the LeafManager
+	leafManager := manager.NewLeafManager(leafRepo, mockHAProxyClient, stemRepo)
+
+	// Create the StemManager
+	stemManager := manager.NewStemManager(stemRepo, leafManager, mockHAProxyClient)
+
+	// Create the PlatformManager
+	platformManager := manager.NewPlatformManager(stemManager, leafManager, "/path/to/your/base")
 
 	// Start the platform
 	err := platformManager.InitializePlatform()

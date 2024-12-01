@@ -9,10 +9,10 @@ func initTestStorage() *HerbariumDB {
 	// Create fixed timestamp for consistent test data
 	fixedTime := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
 
-	// Initialize storage with direct struct assignment
+	// Initialize storage with direct struct assignment using composite keys
 	return &HerbariumDB{
-		Stems: map[string]*models.Stem{
-			"system-service": {
+		Stems: map[StemKey]*models.Stem{
+			{Name: "system-service", Version: "1.0.0"}: {
 				Name:           "system-service",
 				Type:           models.StemTypeSystem,
 				WorkingURL:     "http://localhost:8080",
@@ -46,7 +46,7 @@ func initTestStorage() *HerbariumDB {
 					},
 				},
 			},
-			"user-deployment": {
+			{Name: "user-deployment", Version: "1.0.0"}: {
 				Name:           "user-deployment",
 				Type:           models.StemTypeDeployment,
 				WorkingURL:     "http://localhost:9090",

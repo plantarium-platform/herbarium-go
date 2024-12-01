@@ -3,21 +3,23 @@ package manager
 import (
 	"fmt"
 	"github.com/plantarium-platform/herbarium-go/internal/haproxy"
+	"github.com/plantarium-platform/herbarium-go/internal/storage"
 	"github.com/plantarium-platform/herbarium-go/internal/storage/repos"
 	"github.com/plantarium-platform/herbarium-go/pkg/models"
 	"log"
 	"net"
 	"os"
 	"os/exec"
+	"sort"
 	"strings"
 	"time"
 )
 
 // LeafManagerInterface defines methods for managing leafs.
 type LeafManagerInterface interface {
-	StartLeaf(stemName, version string) (string, error)              // Starts a new leaf instance.
-	StopLeaf(stemName, version, leafID string) error                 // Stops a specific leaf instance.
-	GetRunningLeafs(stemName, version string) ([]models.Leaf, error) // Retrieves all running leafs for a stem.
+	StartLeaf(stemName, version string) (string, error)         // Starts a new leaf instance.
+	StopLeaf(stemName, version, leafID string) error            // Stops a specific leaf instance.
+	GetRunningLeafs(key storage.StemKey) ([]models.Leaf, error) // Retrieves all running leafs for a stem.
 }
 
 // LeafManager manages leaf instances and interacts with the Leaf repository and HAProxy client.
@@ -113,8 +115,9 @@ func (l *LeafManager) StartLeaf(stemName, version string) (string, error) {
 		return "", fmt.Errorf("failed to find an available port: %v", err)
 	}
 
-	// Retrieve the stem configuration from the database
-	stem, err := l.StemRepo.FindStemByName(stemName)
+	// Use StemKey to retrieve the stem configuration from the database
+	stemKey := storage.StemKey{Name: stemName, Version: version}
+	stem, err := l.StemRepo.FindStem(stemKey)
 	if err != nil {
 		return "", fmt.Errorf("failed to find stem configuration: %v", err)
 	}
@@ -122,7 +125,6 @@ func (l *LeafManager) StartLeaf(stemName, version string) (string, error) {
 	// Start the leaf process and get the PID
 	pid, err := l.startLeafInternal(stemName, version, leafID, leafPort, stem.Config)
 	if err != nil {
-		// If starting the leaf fails, return an error
 		return "", fmt.Errorf("failed to start leaf process: %v", err)
 	}
 
@@ -133,34 +135,26 @@ func (l *LeafManager) StartLeaf(stemName, version string) (string, error) {
 	}
 
 	// Save leaf details to the repository
-	err = l.LeafRepo.AddLeaf(stemName, leafID, leafID, pid, leafPort, time.Now())
+	err = l.LeafRepo.AddLeaf(stemKey, leafID, leafID, pid, leafPort, time.Now())
 	if err != nil {
-		// If saving the leaf to the repository fails, handle it as a secondary error
-		// Return the leaf ID even if the repository operation fails
 		return "", fmt.Errorf("leaf started, but failed to save to repository: %v", err)
 	}
 
-	// Return the generated leaf ID upon successful creation
 	return leafID, nil
 }
 
-// StopLeaf stops a specific leaf instance by its ID, stem name, and version.
 func (l *LeafManager) StopLeaf(stemName, version, leafID string) error {
-	// Retrieve the stem by name
-	stem, err := l.StemRepo.FindStemByName(stemName)
+	// Use StemKey to retrieve the stem
+	stemKey := storage.StemKey{Name: stemName, Version: version}
+	stem, err := l.StemRepo.FindStem(stemKey)
 	if err != nil {
-		return fmt.Errorf("failed to find stem %s: %v", stemName, err)
-	}
-
-	// Check if the version matches
-	if stem.Version != version {
-		return fmt.Errorf("stem %s does not match version %s", stemName, version)
+		return fmt.Errorf("failed to find stem %s: %v", stemKey, err)
 	}
 
 	// Find the leaf by its ID
 	leaf, exists := stem.LeafInstances[leafID]
 	if !exists {
-		return fmt.Errorf("leaf with ID %s not found in stem %s", leafID, stemName)
+		return fmt.Errorf("leaf with ID %s not found in stem %s", leafID, stemKey)
 	}
 
 	// Unbind the leaf from HAProxy
@@ -180,27 +174,20 @@ func (l *LeafManager) StopLeaf(stemName, version, leafID string) error {
 		return fmt.Errorf("failed to kill process with PID %d: %v", leaf.PID, err)
 	}
 
-	// Delegate the leaf removal to the repository
-	err = l.LeafRepo.RemoveLeaf(stemName, leafID)
+	// Remove the leaf from the repository
+	err = l.LeafRepo.RemoveLeaf(stemKey, leafID)
 	if err != nil {
 		return fmt.Errorf("failed to remove leaf from repository: %v", err)
 	}
 
-	// Leaf successfully stopped and removed
 	return nil
 }
 
-// GetRunningLeafs retrieves all running leafs for a given stem and version.
-func (l *LeafManager) GetRunningLeafs(stemName, version string) ([]models.Leaf, error) {
-	// Retrieve the stem from the repository
-	stem, err := l.StemRepo.FindStemByName(stemName)
+func (l *LeafManager) GetRunningLeafs(key storage.StemKey) ([]models.Leaf, error) {
+	// Retrieve the stem using StemKey
+	stem, err := l.StemRepo.FindStem(key)
 	if err != nil {
-		return nil, fmt.Errorf("failed to find stem %s: %v", stemName, err)
-	}
-
-	// Check if the version matches
-	if stem.Version != version {
-		return nil, fmt.Errorf("stem version mismatch: expected %s, got %s", version, stem.Version)
+		return nil, fmt.Errorf("failed to find stem %s with version %s: %v", key.Name, key.Version, err)
 	}
 
 	// Collect all running leafs
@@ -210,6 +197,11 @@ func (l *LeafManager) GetRunningLeafs(stemName, version string) ([]models.Leaf, 
 			runningLeafs = append(runningLeafs, *leaf)
 		}
 	}
+
+	// Optional: Sort the leafs for consistent order
+	sort.Slice(runningLeafs, func(i, j int) bool {
+		return runningLeafs[i].ID < runningLeafs[j].ID
+	})
 
 	return runningLeafs, nil
 }

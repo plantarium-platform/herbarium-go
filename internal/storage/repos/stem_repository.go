@@ -8,11 +8,11 @@ import (
 
 // StemRepositoryInterface defines methods for managing stems.
 type StemRepositoryInterface interface {
-	AddStem(name, stemType, workingURL, haproxyBackend, version string, envVars map[string]string, config *models.StemConfig) error
-	RemoveStem(name string) error
-	FindStemByName(name string) (*models.Stem, error)
+	AddStem(key storage.StemKey, stemType, workingURL, haproxyBackend string, envVars map[string]string, config *models.StemConfig) error
+	RemoveStem(key storage.StemKey) error
+	FindStem(key storage.StemKey) (*models.Stem, error)
 	ListStems() ([]*models.Stem, error)
-	ReplaceStem(name, newVersion string, newConfig *models.StemConfig) error
+	ReplaceStem(key storage.StemKey, newVersion string, newConfig *models.StemConfig) error
 }
 
 // StemRepository is an implementation of StemRepositoryInterface.
@@ -28,20 +28,20 @@ func NewStemRepository(storage *storage.HerbariumDB) *StemRepository {
 }
 
 // AddStem adds a new stem to the storage.
-func (r *StemRepository) AddStem(name, stemType, workingURL, haproxyBackend, version string,
+func (r *StemRepository) AddStem(key storage.StemKey, stemType, workingURL, haproxyBackend string,
 	envVars map[string]string, config *models.StemConfig) error {
 
 	return r.storage.WithLock(func() error {
-		if _, exists := r.storage.Stems[name]; exists {
-			return fmt.Errorf("stem %s already exists", name)
+		if _, exists := r.storage.Stems[key]; exists {
+			return fmt.Errorf("stem %s with version %s already exists", key.Name, key.Version)
 		}
 
-		r.storage.Stems[name] = &models.Stem{
-			Name:           name,
+		r.storage.Stems[key] = &models.Stem{
+			Name:           key.Name,
 			Type:           models.StemType(stemType),
 			WorkingURL:     workingURL,
 			HAProxyBackend: haproxyBackend,
-			Version:        version,
+			Version:        key.Version,
 			Environment:    envVars,
 			LeafInstances:  make(map[string]*models.Leaf),
 			Config:         config,
@@ -52,25 +52,25 @@ func (r *StemRepository) AddStem(name, stemType, workingURL, haproxyBackend, ver
 }
 
 // RemoveStem removes a stem from the storage.
-func (r *StemRepository) RemoveStem(name string) error {
+func (r *StemRepository) RemoveStem(key storage.StemKey) error {
 	return r.storage.WithLock(func() error {
-		if _, exists := r.storage.Stems[name]; !exists {
-			return fmt.Errorf("stem %s not found", name)
+		if _, exists := r.storage.Stems[key]; !exists {
+			return fmt.Errorf("stem %s with version %s not found", key.Name, key.Version)
 		}
 
-		delete(r.storage.Stems, name)
+		delete(r.storage.Stems, key)
 		return nil
 	})
 }
 
-// FindStemByName retrieves a stem by its name.
-func (r *StemRepository) FindStemByName(name string) (*models.Stem, error) {
+// FindStem retrieves a stem by its composite key.
+func (r *StemRepository) FindStem(key storage.StemKey) (*models.Stem, error) {
 	var stem *models.Stem
 	err := r.storage.WithRLock(func() error {
 		var exists bool
-		stem, exists = r.storage.Stems[name]
+		stem, exists = r.storage.Stems[key]
 		if !exists {
-			return fmt.Errorf("stem %s not found", name)
+			return fmt.Errorf("stem %s with version %s not found", key.Name, key.Version)
 		}
 		return nil
 	})
@@ -91,11 +91,11 @@ func (r *StemRepository) ListStems() ([]*models.Stem, error) {
 }
 
 // ReplaceStem replaces an existing stem with a new version.
-func (r *StemRepository) ReplaceStem(name, newVersion string, newConfig *models.StemConfig) error {
+func (r *StemRepository) ReplaceStem(key storage.StemKey, newVersion string, newConfig *models.StemConfig) error {
 	return r.storage.WithLock(func() error {
-		stem, exists := r.storage.Stems[name]
+		stem, exists := r.storage.Stems[key]
 		if !exists {
-			return fmt.Errorf("stem %s not found", name)
+			return fmt.Errorf("stem %s with version %s not found", key.Name, key.Version)
 		}
 
 		// Preserve existing leaf instances and environment while updating version and config

@@ -11,14 +11,17 @@ func TestLeafRepository_AddLeaf(t *testing.T) {
 	testStorage := storage.GetTestStorage()
 	repo := NewLeafRepository(testStorage)
 
+	// Create a composite key for the stem
+	stemKey := storage.StemKey{Name: "system-service", Version: "1.0.0"}
+
 	// Add a new leaf to an existing stem
-	err := repo.AddLeaf("system-service", "leaf-2", "haproxy-system", 2345, 8082, time.Now())
+	err := repo.AddLeaf(stemKey, "leaf-2", "haproxy-system", 2345, 8082, time.Now())
 	if err != nil {
 		t.Fatalf("failed to add leaf: %v", err)
 	}
 
 	// Verify that the leaf was added
-	leaf, err := repo.FindLeafByID("system-service", "leaf-2")
+	leaf, err := repo.FindLeafByID(stemKey, "leaf-2")
 	if err != nil {
 		t.Fatalf("failed to find added leaf: %v", err)
 	}
@@ -35,14 +38,17 @@ func TestLeafRepository_RemoveLeaf(t *testing.T) {
 	testStorage := storage.GetTestStorage()
 	repo := NewLeafRepository(testStorage)
 
+	// Create a composite key for the stem
+	stemKey := storage.StemKey{Name: "user-deployment", Version: "1.0.0"}
+
 	// Remove an existing leaf
-	err := repo.RemoveLeaf("user-deployment", "leaf-1")
+	err := repo.RemoveLeaf(stemKey, "leaf-1")
 	if err != nil {
 		t.Fatalf("failed to remove leaf: %v", err)
 	}
 
 	// Verify that the leaf no longer exists
-	_, err = repo.FindLeafByID("user-deployment", "leaf-1")
+	_, err = repo.FindLeafByID(stemKey, "leaf-1")
 	if err == nil {
 		t.Errorf("expected an error when finding removed leaf")
 	}
@@ -52,8 +58,11 @@ func TestLeafRepository_FindLeafByID(t *testing.T) {
 	testStorage := storage.GetTestStorage()
 	repo := NewLeafRepository(testStorage)
 
+	// Create a composite key for the stem
+	stemKey := storage.StemKey{Name: "system-service", Version: "1.0.0"}
+
 	// Find an existing leaf
-	leaf, err := repo.FindLeafByID("system-service", "leaf-1")
+	leaf, err := repo.FindLeafByID(stemKey, "leaf-1")
 	if err != nil {
 		t.Fatalf("failed to find leaf: %v", err)
 	}
@@ -63,7 +72,7 @@ func TestLeafRepository_FindLeafByID(t *testing.T) {
 	}
 
 	// Try to find a non-existent leaf
-	_, err = repo.FindLeafByID("system-service", "non-existent-leaf")
+	_, err = repo.FindLeafByID(stemKey, "non-existent-leaf")
 	if err == nil {
 		t.Errorf("expected an error when finding non-existent leaf")
 	}
@@ -73,8 +82,11 @@ func TestLeafRepository_ListLeafs(t *testing.T) {
 	testStorage := storage.GetTestStorage()
 	repo := NewLeafRepository(testStorage)
 
+	// Create a composite key for the stem
+	stemKey := storage.StemKey{Name: "system-service", Version: "1.0.0"}
+
 	// List all leafs for an existing stem
-	leafs, err := repo.ListLeafs("system-service")
+	leafs, err := repo.ListLeafs(stemKey)
 	if err != nil {
 		t.Fatalf("failed to list leafs: %v", err)
 	}
@@ -94,14 +106,17 @@ func TestLeafRepository_UpdateLeafStatus(t *testing.T) {
 	testStorage := storage.GetTestStorage()
 	repo := NewLeafRepository(testStorage)
 
+	// Create a composite key for the stem
+	stemKey := storage.StemKey{Name: "system-service", Version: "1.0.0"}
+
 	// Update the status of an existing leaf
-	err := repo.UpdateLeafStatus("system-service", "leaf-1", models.StatusRunning)
+	err := repo.UpdateLeafStatus(stemKey, "leaf-1", models.StatusRunning)
 	if err != nil {
 		t.Fatalf("failed to update leaf status: %v", err)
 	}
 
 	// Verify that the status was updated
-	leaf, err := repo.FindLeafByID("system-service", "leaf-1")
+	leaf, err := repo.FindLeafByID(stemKey, "leaf-1")
 	if err != nil {
 		t.Fatalf("failed to find leaf after status update: %v", err)
 	}
@@ -115,6 +130,9 @@ func TestLeafRepository_SetGraftNode(t *testing.T) {
 	testStorage := storage.GetTestStorage()
 	repo := NewLeafRepository(testStorage)
 
+	// Create a composite key for the stem
+	stemKey := storage.StemKey{Name: "user-deployment", Version: "1.0.0"}
+
 	graftNode := &models.Leaf{
 		ID:            "graft-leaf-new",
 		PID:           3456,
@@ -125,13 +143,13 @@ func TestLeafRepository_SetGraftNode(t *testing.T) {
 	}
 
 	// Set the graft node for an existing stem
-	err := repo.SetGraftNode("user-deployment", graftNode)
+	err := repo.SetGraftNode(stemKey, graftNode)
 	if err != nil {
 		t.Fatalf("failed to set graft node: %v", err)
 	}
 
 	// Verify that the graft node was set correctly
-	retrievedNode, err := repo.GetGraftNode("user-deployment")
+	retrievedNode, err := repo.GetGraftNode(stemKey)
 	if err != nil {
 		t.Fatalf("failed to get graft node: %v", err)
 	}
@@ -143,13 +161,15 @@ func TestLeafRepository_SetGraftNode(t *testing.T) {
 		t.Errorf("expected graft node PID to be 3456, got %d", retrievedNode.PID)
 	}
 }
-
 func TestLeafRepository_GetGraftNode(t *testing.T) {
 	testStorage := storage.GetTestStorage()
 	repo := NewLeafRepository(testStorage)
 
+	// Define a stem key for the test
+	stemKey := storage.StemKey{Name: "user-deployment", Version: "1.0.0"}
+
 	// Get an existing graft node
-	graftNode, err := repo.GetGraftNode("user-deployment")
+	graftNode, err := repo.GetGraftNode(stemKey)
 	if err != nil {
 		t.Fatalf("failed to get graft node: %v", err)
 	}
@@ -159,7 +179,8 @@ func TestLeafRepository_GetGraftNode(t *testing.T) {
 	}
 
 	// Try to get a graft node for a non-existent stem
-	_, err = repo.GetGraftNode("non-existent-stem")
+	nonExistentStemKey := storage.StemKey{Name: "non-existent-stem", Version: "1.0.0"}
+	_, err = repo.GetGraftNode(nonExistentStemKey)
 	if err == nil {
 		t.Errorf("expected an error when getting graft node for non-existent stem")
 	}
@@ -169,14 +190,17 @@ func TestLeafRepository_ClearGraftNode(t *testing.T) {
 	testStorage := storage.GetTestStorage()
 	repo := NewLeafRepository(testStorage)
 
+	// Create a composite key for the stem
+	stemKey := storage.StemKey{Name: "user-deployment", Version: "1.0.0"}
+
 	// Clear the graft node for an existing stem
-	err := repo.ClearGraftNode("user-deployment")
+	err := repo.ClearGraftNode(stemKey)
 	if err != nil {
 		t.Fatalf("failed to clear graft node: %v", err)
 	}
 
 	// Verify that the graft node is cleared
-	graftNode, err := repo.GetGraftNode("user-deployment")
+	graftNode, err := repo.GetGraftNode(stemKey)
 	if err != nil {
 		t.Fatalf("failed to get graft node after clearing: %v", err)
 	}

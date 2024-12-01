@@ -10,15 +10,18 @@ func TestStemRepository_AddStem(t *testing.T) {
 	testStorage := storage.GetTestStorage()
 	repo := NewStemRepository(testStorage)
 
+	// Create a composite key for the stem
+	stemKey := storage.StemKey{Name: "test-stem", Version: "1.0.1"}
+
 	// Add a new stem
-	err := repo.AddStem("test-stem", string(models.StemTypeDeployment), "http://localhost:7070",
-		"haproxy-test", "1.0.1", map[string]string{"TEST_ENV": "true"}, &models.StemConfig{})
+	err := repo.AddStem(stemKey, string(models.StemTypeDeployment), "http://localhost:7070",
+		"haproxy-test", map[string]string{"TEST_ENV": "true"}, &models.StemConfig{})
 	if err != nil {
 		t.Fatalf("failed to add stem: %v", err)
 	}
 
 	// Verify that the stem was added
-	stem, err := repo.FindStemByName("test-stem")
+	stem, err := repo.FindStem(stemKey)
 	if err != nil {
 		t.Fatalf("failed to find added stem: %v", err)
 	}
@@ -35,25 +38,31 @@ func TestStemRepository_RemoveStem(t *testing.T) {
 	testStorage := storage.GetTestStorage()
 	repo := NewStemRepository(testStorage)
 
+	// Create a composite key for the stem
+	stemKey := storage.StemKey{Name: "system-service", Version: "1.0.0"}
+
 	// Remove an existing stem
-	err := repo.RemoveStem("system-service")
+	err := repo.RemoveStem(stemKey)
 	if err != nil {
 		t.Fatalf("failed to remove stem: %v", err)
 	}
 
 	// Verify that the stem no longer exists
-	_, err = repo.FindStemByName("system-service")
+	_, err = repo.FindStem(stemKey)
 	if err == nil {
 		t.Errorf("expected an error when finding removed stem")
 	}
 }
 
-func TestStemRepository_FindStemByName(t *testing.T) {
+func TestStemRepository_FindStem(t *testing.T) {
 	testStorage := storage.GetTestStorage()
 	repo := NewStemRepository(testStorage)
 
+	// Create a composite key for the stem
+	stemKey := storage.StemKey{Name: "user-deployment", Version: "1.0.0"}
+
 	// Find an existing stem
-	stem, err := repo.FindStemByName("user-deployment")
+	stem, err := repo.FindStem(stemKey)
 	if err != nil {
 		t.Fatalf("failed to find stem: %v", err)
 	}
@@ -63,7 +72,8 @@ func TestStemRepository_FindStemByName(t *testing.T) {
 	}
 
 	// Try to find a non-existent stem
-	_, err = repo.FindStemByName("non-existent-stem")
+	nonExistentKey := storage.StemKey{Name: "non-existent-stem", Version: "1.0.0"}
+	_, err = repo.FindStem(nonExistentKey)
 	if err == nil {
 		t.Errorf("expected an error when finding non-existent stem")
 	}
@@ -101,14 +111,17 @@ func TestStemRepository_ReplaceStem(t *testing.T) {
 	testStorage := storage.GetTestStorage()
 	repo := NewStemRepository(testStorage)
 
+	// Create a composite key for the stem
+	stemKey := storage.StemKey{Name: "user-deployment", Version: "1.0.0"}
+
 	// Replace an existing stem with a new version
-	err := repo.ReplaceStem("user-deployment", "1.1.0", &models.StemConfig{})
+	err := repo.ReplaceStem(stemKey, "1.1.0", &models.StemConfig{})
 	if err != nil {
 		t.Fatalf("failed to replace stem: %v", err)
 	}
 
 	// Verify that the stem was updated
-	stem, err := repo.FindStemByName("user-deployment")
+	stem, err := repo.FindStem(stemKey)
 	if err != nil {
 		t.Fatalf("failed to find updated stem: %v", err)
 	}

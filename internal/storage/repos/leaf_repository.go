@@ -9,14 +9,14 @@ import (
 
 // LeafRepositoryInterface defines methods for managing leaves.
 type LeafRepositoryInterface interface {
-	AddLeaf(stemName, leafID, haproxyServer string, pid, port int, initialized time.Time) error
-	RemoveLeaf(stemName, leafID string) error
-	FindLeafByID(stemName, leafID string) (*models.Leaf, error)
-	ListLeafs(stemName string) ([]*models.Leaf, error)
-	UpdateLeafStatus(stemName string, leafID string, status models.LeafStatus) error
-	SetGraftNode(stemName string, graftNode *models.Leaf) error
-	GetGraftNode(stemName string) (*models.Leaf, error)
-	ClearGraftNode(stemName string) error
+	AddLeaf(stemKey storage.StemKey, leafID, haproxyServer string, pid, port int, initialized time.Time) error
+	RemoveLeaf(stemKey storage.StemKey, leafID string) error
+	FindLeafByID(stemKey storage.StemKey, leafID string) (*models.Leaf, error)
+	ListLeafs(stemKey storage.StemKey) ([]*models.Leaf, error)
+	UpdateLeafStatus(stemKey storage.StemKey, leafID string, status models.LeafStatus) error
+	SetGraftNode(stemKey storage.StemKey, graftNode *models.Leaf) error
+	GetGraftNode(stemKey storage.StemKey) (*models.Leaf, error)
+	ClearGraftNode(stemKey storage.StemKey) error
 }
 
 // LeafRepository is an implementation of LeafRepositoryInterface.
@@ -31,25 +31,25 @@ func NewLeafRepository(storage *storage.HerbariumDB) *LeafRepository {
 	}
 }
 
-// getStem is a helper to get a stem with error checking
-func (r *LeafRepository) getStem(stemName string) (*models.Stem, error) {
-	stem, exists := r.storage.Stems[stemName]
+// getStem is a helper to get a stem with error checking using StemKey.
+func (r *LeafRepository) getStem(stemKey storage.StemKey) (*models.Stem, error) {
+	stem, exists := r.storage.Stems[stemKey]
 	if !exists {
-		return nil, fmt.Errorf("stem %s not found", stemName)
+		return nil, fmt.Errorf("stem %s with version %s not found", stemKey.Name, stemKey.Version)
 	}
 	return stem, nil
 }
 
 // AddLeaf adds a new leaf to a specified stem.
-func (r *LeafRepository) AddLeaf(stemName, leafID, haproxyServer string, pid, port int, initialized time.Time) error {
+func (r *LeafRepository) AddLeaf(stemKey storage.StemKey, leafID, haproxyServer string, pid, port int, initialized time.Time) error {
 	return r.storage.WithLock(func() error {
-		stem, err := r.getStem(stemName)
+		stem, err := r.getStem(stemKey)
 		if err != nil {
 			return err
 		}
 
 		if _, exists := stem.LeafInstances[leafID]; exists {
-			return fmt.Errorf("leaf %s already exists in stem %s", leafID, stemName)
+			return fmt.Errorf("leaf %s already exists in stem %s version %s", leafID, stemKey.Name, stemKey.Version)
 		}
 
 		stem.LeafInstances[leafID] = &models.Leaf{
@@ -66,15 +66,15 @@ func (r *LeafRepository) AddLeaf(stemName, leafID, haproxyServer string, pid, po
 }
 
 // RemoveLeaf removes a leaf from a specified stem.
-func (r *LeafRepository) RemoveLeaf(stemName, leafID string) error {
+func (r *LeafRepository) RemoveLeaf(stemKey storage.StemKey, leafID string) error {
 	return r.storage.WithLock(func() error {
-		stem, err := r.getStem(stemName)
+		stem, err := r.getStem(stemKey)
 		if err != nil {
 			return err
 		}
 
 		if _, exists := stem.LeafInstances[leafID]; !exists {
-			return fmt.Errorf("leaf %s not found in stem %s", leafID, stemName)
+			return fmt.Errorf("leaf %s not found in stem %s version %s", leafID, stemKey.Name, stemKey.Version)
 		}
 
 		delete(stem.LeafInstances, leafID)
@@ -83,17 +83,17 @@ func (r *LeafRepository) RemoveLeaf(stemName, leafID string) error {
 }
 
 // FindLeafByID finds a leaf by its ID within a specified stem.
-func (r *LeafRepository) FindLeafByID(stemName, leafID string) (*models.Leaf, error) {
+func (r *LeafRepository) FindLeafByID(stemKey storage.StemKey, leafID string) (*models.Leaf, error) {
 	var leaf *models.Leaf // Declare leaf outside the closure
 	err := r.storage.WithRLock(func() error {
-		stem, err := r.getStem(stemName)
+		stem, err := r.getStem(stemKey)
 		if err != nil {
 			return err
 		}
 
 		foundLeaf, exists := stem.LeafInstances[leafID]
 		if !exists {
-			return fmt.Errorf("leaf %s not found in stem %s", leafID, stemName)
+			return fmt.Errorf("leaf %s not found in stem %s version %s", leafID, stemKey.Name, stemKey.Version)
 		}
 
 		leaf = foundLeaf // Assign to the outer variable
@@ -103,9 +103,9 @@ func (r *LeafRepository) FindLeafByID(stemName, leafID string) (*models.Leaf, er
 }
 
 // ListLeafs lists all leafs for a specified stem.
-func (r *LeafRepository) ListLeafs(stemName string) (leafs []*models.Leaf, err error) {
+func (r *LeafRepository) ListLeafs(stemKey storage.StemKey) (leafs []*models.Leaf, err error) {
 	err = r.storage.WithRLock(func() error {
-		stem, err := r.getStem(stemName)
+		stem, err := r.getStem(stemKey)
 		if err != nil {
 			return err
 		}
@@ -121,16 +121,16 @@ func (r *LeafRepository) ListLeafs(stemName string) (leafs []*models.Leaf, err e
 }
 
 // UpdateLeafStatus updates the status of a specified leaf.
-func (r *LeafRepository) UpdateLeafStatus(stemName, leafID string, status models.LeafStatus) error {
+func (r *LeafRepository) UpdateLeafStatus(stemKey storage.StemKey, leafID string, status models.LeafStatus) error {
 	return r.storage.WithLock(func() error {
-		stem, err := r.getStem(stemName)
+		stem, err := r.getStem(stemKey)
 		if err != nil {
 			return err
 		}
 
 		leaf, exists := stem.LeafInstances[leafID]
 		if !exists {
-			return fmt.Errorf("leaf %s not found in stem %s", leafID, stemName)
+			return fmt.Errorf("leaf %s not found in stem %s version %s", leafID, stemKey.Name, stemKey.Version)
 		}
 
 		leaf.Status = status
@@ -139,9 +139,9 @@ func (r *LeafRepository) UpdateLeafStatus(stemName, leafID string, status models
 }
 
 // SetGraftNode sets a graft node for a specified stem.
-func (r *LeafRepository) SetGraftNode(stemName string, graftNode *models.Leaf) error {
+func (r *LeafRepository) SetGraftNode(stemKey storage.StemKey, graftNode *models.Leaf) error {
 	return r.storage.WithLock(func() error {
-		stem, err := r.getStem(stemName)
+		stem, err := r.getStem(stemKey)
 		if err != nil {
 			return err
 		}
@@ -152,9 +152,9 @@ func (r *LeafRepository) SetGraftNode(stemName string, graftNode *models.Leaf) e
 }
 
 // GetGraftNode retrieves the graft node for a specified stem.
-func (r *LeafRepository) GetGraftNode(stemName string) (graftNode *models.Leaf, err error) {
+func (r *LeafRepository) GetGraftNode(stemKey storage.StemKey) (graftNode *models.Leaf, err error) {
 	err = r.storage.WithRLock(func() error {
-		stem, err := r.getStem(stemName)
+		stem, err := r.getStem(stemKey)
 		if err != nil {
 			return err
 		}
@@ -166,9 +166,9 @@ func (r *LeafRepository) GetGraftNode(stemName string) (graftNode *models.Leaf, 
 }
 
 // ClearGraftNode clears the graft node for a specified stem.
-func (r *LeafRepository) ClearGraftNode(stemName string) error {
+func (r *LeafRepository) ClearGraftNode(stemKey storage.StemKey) error {
 	return r.storage.WithLock(func() error {
-		stem, err := r.getStem(stemName)
+		stem, err := r.getStem(stemKey)
 		if err != nil {
 			return err
 		}
