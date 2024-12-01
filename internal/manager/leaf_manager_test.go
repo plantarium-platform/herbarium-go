@@ -34,7 +34,7 @@ func TestStartLeafWithPingService(t *testing.T) {
 
 	stemKey := storage.StemKey{Name: "ping-service-stem", Version: "v1.0"}
 	leafPort := 8000
-	leafID := "ping-service-stem-v1.0-1672574400"
+	leafID := "ping-service-stem-v1.0-1672574400000000000"
 
 	stem := &models.Stem{
 		Name:           stemKey.Name,

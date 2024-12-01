@@ -1,11 +1,11 @@
 package manager
 
-/*
 import (
 	"github.com/plantarium-platform/herbarium-go/internal/storage"
 	"github.com/plantarium-platform/herbarium-go/internal/storage/repos"
 	"github.com/plantarium-platform/herbarium-go/pkg/models"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"testing"
 )
 
@@ -17,7 +17,9 @@ func TestStemManager_AddStem(t *testing.T) {
 	mockHAProxyClient := new(MockHAProxyClient)
 	leafManager := NewLeafManager(leafRepo, mockHAProxyClient, stemRepo)
 
-	mockHAProxyClient.On("BindStem", "test-stem-backend").Return(nil)
+	mockHAProxyClient.On("BindStem", "test").Return(nil)
+	// Mock leaf creation logic
+	mockHAProxyClient.On("BindLeaf", mock.Anything, mock.Anything, "127.0.0.1", mock.AnythingOfType("int")).Return(nil)
 
 	stemManager := NewStemManager(stemRepo, leafManager, mockHAProxyClient)
 
@@ -25,17 +27,17 @@ func TestStemManager_AddStem(t *testing.T) {
 	stemConfig := models.StemConfig{
 		Name:         "test-stem",
 		URL:          "/test",
-		Command:      "./run-test",
+		Command:      determinePingCommand(), // Use ping command
 		Env:          map[string]string{"ENV_VAR": "test"},
 		Version:      "1.0.0",
 		MinInstances: &minInstances,
 	}
 
-	err := stemManager.AddStem(stemConfig)
+	err := stemManager.RegisterStem(stemConfig)
 	assert.NoError(t, err)
 
 	stemKey := storage.StemKey{Name: "test-stem", Version: "1.0.0"}
-	stem, err := stemRepo.FindStem(stemKey)
+	stem, err := stemRepo.FetchStem(stemKey)
 	assert.NoError(t, err)
 	assert.NotNil(t, stem)
 	assert.Equal(t, "test-stem", stem.Name)
@@ -96,8 +98,7 @@ func TestStemManager_AddStem_DuplicateError(t *testing.T) {
 		MinInstances: nil,
 	}
 
-	err := stemManager.AddStem(stemConfig)
+	err := stemManager.RegisterStem(stemConfig)
 	assert.Error(t, err)
 	assert.Equal(t, "Stem test-stem already exists in version 1.0.0. Please provide a new version or stop the previous one.", err.Error())
 }
-*/

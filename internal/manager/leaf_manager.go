@@ -107,7 +107,7 @@ func findAvailablePort(startPort int) (int, error) {
 // 7. The method returns the leaf ID `ping-service-stem-v1.0-1672574400`.
 func (l *LeafManager) StartLeaf(stemName, version string) (string, error) {
 	// Generate a unique leaf ID based on the stem name, version, and current timestamp
-	leafID := fmt.Sprintf("%s-%s-%d", stemName, version, time.Now().Unix())
+	leafID := fmt.Sprintf("%s-%s-%d", stemName, version, time.Now().UnixNano())
 
 	// Find the first available port starting from 8000
 	leafPort, err := findAvailablePort(8000)
@@ -117,7 +117,7 @@ func (l *LeafManager) StartLeaf(stemName, version string) (string, error) {
 
 	// Use StemKey to retrieve the stem configuration from the database
 	stemKey := storage.StemKey{Name: stemName, Version: version}
-	stem, err := l.StemRepo.FindStem(stemKey)
+	stem, err := l.StemRepo.FetchStem(stemKey)
 	if err != nil {
 		return "", fmt.Errorf("failed to find stem configuration: %v", err)
 	}
@@ -146,7 +146,7 @@ func (l *LeafManager) StartLeaf(stemName, version string) (string, error) {
 func (l *LeafManager) StopLeaf(stemName, version, leafID string) error {
 	// Use StemKey to retrieve the stem
 	stemKey := storage.StemKey{Name: stemName, Version: version}
-	stem, err := l.StemRepo.FindStem(stemKey)
+	stem, err := l.StemRepo.FetchStem(stemKey)
 	if err != nil {
 		return fmt.Errorf("failed to find stem %s: %v", stemKey, err)
 	}
@@ -185,7 +185,7 @@ func (l *LeafManager) StopLeaf(stemName, version, leafID string) error {
 
 func (l *LeafManager) GetRunningLeafs(key storage.StemKey) ([]models.Leaf, error) {
 	// Retrieve the stem using StemKey
-	stem, err := l.StemRepo.FindStem(key)
+	stem, err := l.StemRepo.FetchStem(key)
 	if err != nil {
 		return nil, fmt.Errorf("failed to find stem %s with version %s: %v", key.Name, key.Version, err)
 	}

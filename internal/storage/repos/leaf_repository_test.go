@@ -13,24 +13,34 @@ func TestStemRepository_AddStem(t *testing.T) {
 	// Create a composite key for the stem
 	stemKey := storage.StemKey{Name: "test-stem", Version: "1.0.1"}
 
-	// Add a new stem
-	err := repo.AddStem(stemKey, string(models.StemTypeDeployment), "http://localhost:7070",
-		"haproxy-test", map[string]string{"TEST_ENV": "true"}, &models.StemConfig{})
+	// Create a new stem object
+	stem := &models.Stem{
+		Name:           stemKey.Name,
+		Type:           models.StemTypeDeployment,
+		WorkingURL:     "http://localhost:7070",
+		HAProxyBackend: "haproxy-test",
+		Version:        stemKey.Version,
+		Environment:    map[string]string{"TEST_ENV": "true"},
+		Config:         &models.StemConfig{},
+	}
+
+	// Save the stem to the repository
+	err := repo.SaveStem(stemKey, stem)
 	if err != nil {
 		t.Fatalf("failed to add stem: %v", err)
 	}
 
 	// Verify that the stem was added
-	stem, err := repo.FindStem(stemKey)
+	fetchedStem, err := repo.FetchStem(stemKey)
 	if err != nil {
 		t.Fatalf("failed to find added stem: %v", err)
 	}
 
-	if stem.Name != "test-stem" {
-		t.Errorf("expected stem name to be test-stem, got %s", stem.Name)
+	if fetchedStem.Name != "test-stem" {
+		t.Errorf("expected stem name to be test-stem, got %s", fetchedStem.Name)
 	}
-	if stem.Version != "1.0.1" {
-		t.Errorf("expected stem version to be 1.0.1, got %s", stem.Version)
+	if fetchedStem.Version != "1.0.1" {
+		t.Errorf("expected stem version to be 1.0.1, got %s", fetchedStem.Version)
 	}
 }
 
@@ -42,13 +52,13 @@ func TestStemRepository_RemoveStem(t *testing.T) {
 	stemKey := storage.StemKey{Name: "system-service", Version: "1.0.0"}
 
 	// Remove an existing stem
-	err := repo.RemoveStem(stemKey)
+	err := repo.DeleteStem(stemKey)
 	if err != nil {
 		t.Fatalf("failed to remove stem: %v", err)
 	}
 
 	// Verify that the stem no longer exists
-	_, err = repo.FindStem(stemKey)
+	_, err = repo.FetchStem(stemKey)
 	if err == nil {
 		t.Errorf("expected an error when finding removed stem")
 	}
@@ -62,7 +72,7 @@ func TestStemRepository_FindStem(t *testing.T) {
 	stemKey := storage.StemKey{Name: "user-deployment", Version: "1.0.0"}
 
 	// Find an existing stem
-	stem, err := repo.FindStem(stemKey)
+	stem, err := repo.FetchStem(stemKey)
 	if err != nil {
 		t.Fatalf("failed to find stem: %v", err)
 	}
@@ -73,7 +83,7 @@ func TestStemRepository_FindStem(t *testing.T) {
 
 	// Try to find a non-existent stem
 	nonExistentKey := storage.StemKey{Name: "non-existent-stem", Version: "1.0.0"}
-	_, err = repo.FindStem(nonExistentKey)
+	_, err = repo.FetchStem(nonExistentKey)
 	if err == nil {
 		t.Errorf("expected an error when finding non-existent stem")
 	}
@@ -84,7 +94,7 @@ func TestStemRepository_ListStems(t *testing.T) {
 	repo := NewStemRepository(testStorage)
 
 	// List all stems
-	stems, err := repo.ListStems()
+	stems, err := repo.GetAllStems()
 	if err != nil {
 		t.Fatalf("failed to list stems: %v", err)
 	}
@@ -115,13 +125,13 @@ func TestStemRepository_ReplaceStem(t *testing.T) {
 	stemKey := storage.StemKey{Name: "user-deployment", Version: "1.0.0"}
 
 	// Replace an existing stem with a new version
-	err := repo.ReplaceStem(stemKey, "1.1.0", &models.StemConfig{})
+	err := repo.UpdateStem(stemKey, "1.1.0", &models.StemConfig{})
 	if err != nil {
 		t.Fatalf("failed to replace stem: %v", err)
 	}
 
 	// Verify that the stem was updated
-	stem, err := repo.FindStem(stemKey)
+	stem, err := repo.FetchStem(stemKey)
 	if err != nil {
 		t.Fatalf("failed to find updated stem: %v", err)
 	}
