@@ -1,6 +1,7 @@
 package manager
 
 import (
+	"github.com/plantarium-platform/herbarium-go/internal/storage"
 	"github.com/plantarium-platform/herbarium-go/pkg/models"
 	"github.com/stretchr/testify/mock"
 )
@@ -40,9 +41,13 @@ func (m *MockLeafManager) StopLeaf(stemName, version, leafID string) error {
 	return args.Error(0)
 }
 
-func (m *MockLeafManager) GetRunningLeafs(stemName, version string) ([]models.Leaf, error) {
-	args := m.Called(stemName, version)
-	return args.Get(0).([]models.Leaf), args.Error(1)
+func (m *MockLeafManager) GetRunningLeafs(key storage.StemKey) ([]models.Leaf, error) {
+	args := m.Called(key)
+	// Use type assertion carefully to handle potential nil or incorrect types.
+	if leafs, ok := args.Get(0).([]models.Leaf); ok {
+		return leafs, args.Error(1)
+	}
+	return nil, args.Error(1)
 }
 
 // MockHAProxyClient is a mock implementation of HAProxyClientInterface.

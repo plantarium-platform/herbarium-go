@@ -102,3 +102,85 @@ func TestStemManager_AddStem_DuplicateError(t *testing.T) {
 	assert.Error(t, err)
 	assert.Equal(t, "Stem test-stem already exists in version 1.0.0. Please provide a new version or stop the previous one.", err.Error())
 }
+
+func TestStemManager_UnregisterStem(t *testing.T) {
+	// Set up in-memory storage and repositories
+	herbariumDB := storage.GetHerbariumDB()
+
+	stemRepo := repos.NewStemRepository(herbariumDB)
+
+	// Mock HAProxyClient and LeafManager
+	mockHAProxyClient := new(MockHAProxyClient)
+	mockLeafManager := new(MockLeafManager)
+
+	// Create StemManager
+	stemManager := NewStemManager(stemRepo, mockLeafManager, mockHAProxyClient)
+
+	// Define stem details
+	stemKey := storage.StemKey{Name: "test-stem", Version: "1.0.0"}
+	stem := &models.Stem{
+		Name:           stemKey.Name,
+		Type:           models.StemTypeDeployment,
+		HAProxyBackend: "/test",
+		Version:        stemKey.Version,
+		LeafInstances: map[string]*models.Leaf{
+			"leaf1": {
+				ID:            "leaf1",
+				Status:        models.StatusRunning,
+				Port:          8000,
+				PID:           1234,
+				HAProxyServer: "haproxy-leaf1",
+			},
+			"leaf2": {
+				ID:            "leaf2",
+				Status:        models.StatusRunning,
+				Port:          8001,
+				PID:           5678,
+				HAProxyServer: "haproxy-leaf2",
+			},
+		},
+	}
+	herbariumDB.Stems[stemKey] = stem
+
+	// Mock stopping leafs
+	mockLeafManager.On("StopLeaf", stemKey.Name, stemKey.Version, "leaf1").Return(nil)
+	mockLeafManager.On("StopLeaf", stemKey.Name, stemKey.Version, "leaf2").Return(nil)
+
+	// Mock setup for GetRunningLeafs
+	mockLeafManager.On("GetRunningLeafs", storage.StemKey{Name: "test-stem", Version: "1.0.0"}).
+		Return([]models.Leaf{
+			{
+				ID:            "leaf1",
+				Status:        models.StatusRunning,
+				Port:          8000,
+				PID:           12345,
+				HAProxyServer: "haproxy-server-1",
+			},
+			{
+				ID:            "leaf2",
+				Status:        models.StatusRunning,
+				Port:          8001,
+				PID:           12346,
+				HAProxyServer: "haproxy-server-2",
+			},
+		}, nil)
+
+	// Mock HAProxy unbind
+	mockHAProxyClient.On("UnbindStem", "/test").Return(nil)
+
+	// Call UnregisterStem
+	err := stemManager.UnregisterStem(stemKey.Name, stemKey.Version)
+	assert.NoError(t, err)
+
+	// Verify all leafs are stopped
+	mockLeafManager.AssertCalled(t, "StopLeaf", stemKey.Name, stemKey.Version, "leaf1")
+	mockLeafManager.AssertCalled(t, "StopLeaf", stemKey.Name, stemKey.Version, "leaf2")
+
+	// Verify HAProxy backend is unbound
+	mockHAProxyClient.AssertCalled(t, "UnbindStem", "/test")
+
+	// Verify stem is removed from in-memory database
+	_, err = stemRepo.FetchStem(stemKey)
+	assert.Error(t, err)
+	assert.Equal(t, "stem test-stem with version 1.0.0 not found", err.Error())
+}

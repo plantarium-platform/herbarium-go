@@ -7,6 +7,8 @@ import (
 	"github.com/plantarium-platform/herbarium-go/internal/storage/repos"
 	"github.com/plantarium-platform/herbarium-go/pkg/models"
 	"strings"
+	"sync"
+	"sync/atomic"
 )
 
 // StemManagerInterface defines methods for managing stems.
@@ -79,9 +81,53 @@ func (s *StemManager) RegisterStem(config models.StemConfig) error {
 	return nil
 }
 
-// RemoveStem removes a stem by its name and version.
+// UnregisterStem removes a stem by its name and version.
 func (s *StemManager) UnregisterStem(name, version string) error {
-	// TODO: Add logic for removing a stem.
+	// Step 1: Create a StemKey and fetch the stem
+	stemKey := storage.StemKey{Name: name, Version: version}
+	stem, err := s.StemRepo.FetchStem(stemKey)
+	if err != nil {
+		return fmt.Errorf("failed to fetch stem %s version %s: %v", name, version, err)
+	}
+
+	// Step 2: Retrieve all running leafs for the stem
+	leafs, err := s.LeafManager.GetRunningLeafs(stemKey)
+	if err != nil {
+		return fmt.Errorf("failed to retrieve running leafs for stem %s version %s: %v", name, version, err)
+	}
+
+	// Step 3: Stop all leafs in parallel
+	var wg sync.WaitGroup
+	var stopError atomic.Value // To capture the first error, if any
+	for _, leaf := range leafs {
+		wg.Add(1)
+		go func(leafID string) {
+			defer wg.Done()
+			err := s.LeafManager.StopLeaf(name, version, leafID)
+			if err != nil {
+				stopError.Store(err) // Capture the error
+			}
+		}(leaf.ID)
+	}
+	wg.Wait()
+
+	// Check if any errors occurred while stopping leafs
+	if storedError := stopError.Load(); storedError != nil {
+		return fmt.Errorf("failed to stop leafs for stem %s version %s: %v", name, version, storedError)
+	}
+
+	// Step 4: Remove stem from HAProxy
+	err = s.HAProxyClient.UnbindStem(stem.HAProxyBackend)
+	if err != nil {
+		return fmt.Errorf("failed to unbind stem backend for %s: %v", stem.HAProxyBackend, err)
+	}
+
+	// Step 5: Remove stem from the in-memory database
+	err = s.StemRepo.DeleteStem(stemKey)
+	if err != nil {
+		return fmt.Errorf("failed to remove stem %s version %s from repository: %v", name, version, err)
+	}
+
 	return nil
 }
 
