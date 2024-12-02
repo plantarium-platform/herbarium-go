@@ -169,7 +169,7 @@ func TestStemManager_UnregisterStem(t *testing.T) {
 	mockHAProxyClient.On("UnbindStem", "/test").Return(nil)
 
 	// Call UnregisterStem
-	err := stemManager.UnregisterStem(stemKey.Name, stemKey.Version)
+	err := stemManager.UnregisterStem(stemKey)
 	assert.NoError(t, err)
 
 	// Verify all leafs are stopped
@@ -183,4 +183,51 @@ func TestStemManager_UnregisterStem(t *testing.T) {
 	_, err = stemRepo.FetchStem(stemKey)
 	assert.Error(t, err)
 	assert.Equal(t, "stem test-stem with version 1.0.0 not found", err.Error())
+}
+
+func TestStemManager_FetchStemInfo(t *testing.T) {
+	// Set up the in-memory storage
+	herbariumDB := storage.GetHerbariumDB()
+	stemRepo := repos.NewStemRepository(herbariumDB)
+
+	// Initialize the StemManager with a real repository
+	mockLeafManager := new(MockLeafManager) // Mock leaf manager (not used in this test)
+	mockHAProxyClient := new(MockHAProxyClient)
+	stemManager := NewStemManager(stemRepo, mockLeafManager, mockHAProxyClient)
+
+	// Define a stem key
+	stemKey := storage.StemKey{Name: "test-stem", Version: "1.0.0"}
+
+	// Manually add a stem to the in-memory database
+	stem := &models.Stem{
+		Name:           stemKey.Name,
+		Type:           models.StemTypeDeployment,
+		WorkingURL:     "/test",
+		HAProxyBackend: "/test",
+		Version:        stemKey.Version,
+		Environment:    map[string]string{"ENV_VAR": "test"},
+		LeafInstances:  make(map[string]*models.Leaf),
+		Config: &models.StemConfig{
+			Name:    stemKey.Name,
+			URL:     "/test",
+			Command: "echo 'test'",
+			Env:     map[string]string{"ENV_VAR": "test"},
+			Version: stemKey.Version,
+		},
+	}
+	err := stemRepo.SaveStem(stemKey, stem)
+	assert.NoError(t, err, "failed to save stem to repository")
+
+	// Call FetchStemInfo to retrieve the stem
+	retrievedStem, err := stemManager.FetchStemInfo(stemKey)
+	assert.NoError(t, err, "failed to fetch stem info")
+	assert.NotNil(t, retrievedStem, "retrieved stem should not be nil")
+
+	// Validate the retrieved stem data
+	assert.Equal(t, stemKey.Name, retrievedStem.Name, "stem name should match")
+	assert.Equal(t, stemKey.Version, retrievedStem.Version, "stem version should match")
+	assert.Equal(t, "/test", retrievedStem.WorkingURL, "stem URL should match")
+	assert.Equal(t, "/test", retrievedStem.HAProxyBackend, "stem HAProxy backend should match")
+	assert.Equal(t, map[string]string{"ENV_VAR": "test"}, retrievedStem.Environment, "stem environment should match")
+	assert.Equal(t, "echo 'test'", retrievedStem.Config.Command, "stem command should match")
 }

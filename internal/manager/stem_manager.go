@@ -13,9 +13,9 @@ import (
 
 // StemManagerInterface defines methods for managing stems.
 type StemManagerInterface interface {
-	RegisterStem(config models.StemConfig) error              // Adds a new stem to the system with explicit configuration.
-	UnregisterStem(name, version string) error                // Removes a stem from the system.
-	FetchStemInfo(name, version string) (*models.Stem, error) // Retrieves information about a specific stem.
+	RegisterStem(config models.StemConfig) error             // Adds a new stem to the system with explicit configuration.
+	UnregisterStem(key storage.StemKey) error                // Removes a stem from the system.
+	FetchStemInfo(key storage.StemKey) (*models.Stem, error) // Retrieves information about a specific stem.
 }
 
 // StemManager is an implementation of StemManagerInterface.
@@ -33,6 +33,8 @@ func NewStemManager(stemRepo *repos.StemRepository, leafManager LeafManagerInter
 		HAProxyClient: haProxyClient,
 	}
 }
+
+// RegisterStem registers a new stem in the system.
 func (s *StemManager) RegisterStem(config models.StemConfig) error {
 	// Define the stem key
 	stemKey := storage.StemKey{Name: config.Name, Version: config.Version}
@@ -44,6 +46,7 @@ func (s *StemManager) RegisterStem(config models.StemConfig) error {
 			config.Name, config.Version,
 		)
 	}
+
 	cleanURL := strings.TrimPrefix(config.URL, "/") // Remove leading slash
 	err := s.HAProxyClient.BindStem(cleanURL)
 	if err != nil {
@@ -81,19 +84,18 @@ func (s *StemManager) RegisterStem(config models.StemConfig) error {
 	return nil
 }
 
-// UnregisterStem removes a stem by its name and version.
-func (s *StemManager) UnregisterStem(name, version string) error {
-	// Step 1: Create a StemKey and fetch the stem
-	stemKey := storage.StemKey{Name: name, Version: version}
-	stem, err := s.StemRepo.FetchStem(stemKey)
+// UnregisterStem removes a stem from the system.
+func (s *StemManager) UnregisterStem(key storage.StemKey) error {
+	// Step 1: Fetch the stem
+	stem, err := s.StemRepo.FetchStem(key)
 	if err != nil {
-		return fmt.Errorf("failed to fetch stem %s version %s: %v", name, version, err)
+		return fmt.Errorf("failed to fetch stem %s version %s: %v", key.Name, key.Version, err)
 	}
 
 	// Step 2: Retrieve all running leafs for the stem
-	leafs, err := s.LeafManager.GetRunningLeafs(stemKey)
+	leafs, err := s.LeafManager.GetRunningLeafs(key)
 	if err != nil {
-		return fmt.Errorf("failed to retrieve running leafs for stem %s version %s: %v", name, version, err)
+		return fmt.Errorf("failed to retrieve running leafs for stem %s version %s: %v", key.Name, key.Version, err)
 	}
 
 	// Step 3: Stop all leafs in parallel
@@ -103,7 +105,7 @@ func (s *StemManager) UnregisterStem(name, version string) error {
 		wg.Add(1)
 		go func(leafID string) {
 			defer wg.Done()
-			err := s.LeafManager.StopLeaf(name, version, leafID)
+			err := s.LeafManager.StopLeaf(key.Name, key.Version, leafID)
 			if err != nil {
 				stopError.Store(err) // Capture the error
 			}
@@ -113,7 +115,7 @@ func (s *StemManager) UnregisterStem(name, version string) error {
 
 	// Check if any errors occurred while stopping leafs
 	if storedError := stopError.Load(); storedError != nil {
-		return fmt.Errorf("failed to stop leafs for stem %s version %s: %v", name, version, storedError)
+		return fmt.Errorf("failed to stop leafs for stem %s version %s: %v", key.Name, key.Version, storedError)
 	}
 
 	// Step 4: Remove stem from HAProxy
@@ -122,17 +124,16 @@ func (s *StemManager) UnregisterStem(name, version string) error {
 		return fmt.Errorf("failed to unbind stem backend for %s: %v", stem.HAProxyBackend, err)
 	}
 
-	// Step 5: Remove stem from the in-memory database
-	err = s.StemRepo.DeleteStem(stemKey)
+	// Step 5: Remove stem from the repository
+	err = s.StemRepo.DeleteStem(key)
 	if err != nil {
-		return fmt.Errorf("failed to remove stem %s version %s from repository: %v", name, version, err)
+		return fmt.Errorf("failed to remove stem %s version %s from repository: %v", key.Name, key.Version, err)
 	}
 
 	return nil
 }
 
-// GetStemInfo retrieves information about a specific stem by name and version.
-func (s *StemManager) FetchStemInfo(name, version string) (*models.Stem, error) {
-	// TODO: Add logic for retrieving stem info.
-	return nil, nil
+// FetchStemInfo retrieves information about a specific stem.
+func (s *StemManager) FetchStemInfo(key storage.StemKey) (*models.Stem, error) {
+	return s.StemRepo.FetchStem(key)
 }
