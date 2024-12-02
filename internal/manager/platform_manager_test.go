@@ -1,9 +1,8 @@
 package manager
 
-/*
-TODO TBD Later
 import (
 	"fmt"
+	"github.com/plantarium-platform/herbarium-go/pkg/models"
 	"os"
 	"testing"
 
@@ -85,4 +84,48 @@ func TestPlatformManager_GetServiceConfigurations(t *testing.T) {
 	assert.Equal(t, "production", helloService.Config.Env["GLOBAL_VAR"], "Expected GLOBAL_VAR to be 'production'")
 	assert.Equal(t, "test", helloService.Config.Dependencies[0].Schema, "Expected dependency schema 'test'")
 }
-*/
+func TestLoadGlobalConfig(t *testing.T) {
+	// Set the environment variable to point to the root folder
+	testRoot := "../../testdata"
+	err := os.Setenv("PLANTARIUM_ROOT_FOLDER", testRoot)
+	assert.NoError(t, err, "failed to set environment variable for root folder")
+
+	// Define the expected configuration
+	// Define the expected configuration
+	expectedConfig := &models.GlobalConfig{
+		Plantarium: struct {
+			RootFolder string `yaml:"root_folder"`
+			LogFolder  string `yaml:"log_folder"`
+		}{
+			RootFolder: testRoot, // Overwritten by environment variable
+			LogFolder:  "/var/log/plantarium",
+		},
+		HAProxy: struct {
+			URL      string `yaml:"url"`
+			Login    string `yaml:"login"`
+			Password string `yaml:"password"`
+		}{
+			URL:      "http://localhost:8080",
+			Login:    "admin",
+			Password: "secure-password",
+		},
+		Security: struct {
+			APIKey string `yaml:"api_key"`
+		}{
+			APIKey: "super-secure-key",
+		},
+	}
+
+	// Create the PlatformManager and call LoadGlobalConfig
+	manager := &PlatformManager{BasePath: testRoot}
+	globalConfig, err := manager.LoadGlobalConfig()
+
+	// Assertions
+	assert.NoError(t, err, "failed to load global config")
+	assert.Equal(t, expectedConfig.Plantarium.RootFolder, globalConfig.Plantarium.RootFolder)
+	assert.Equal(t, expectedConfig.Plantarium.LogFolder, globalConfig.Plantarium.LogFolder)
+	assert.Equal(t, expectedConfig.HAProxy.URL, globalConfig.HAProxy.URL)
+	assert.Equal(t, expectedConfig.HAProxy.Login, globalConfig.HAProxy.Login)
+	assert.Equal(t, expectedConfig.HAProxy.Password, globalConfig.HAProxy.Password)
+	assert.Equal(t, expectedConfig.Security.APIKey, globalConfig.Security.APIKey)
+}

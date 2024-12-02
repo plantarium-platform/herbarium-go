@@ -1,1 +1,11 @@
-Herbarium configuration
+plantarium:
+  root_folder: "/default/plantarium/path" # Overridable by environment variable
+  log_folder: "/var/log/plantarium"      # Centralized log folder
+
+haproxy:
+  url: "http://localhost:8080"           # HAProxy management URL
+  login: "admin"                         # HAProxy login
+  password: "secure-password"            # HAProxy password
+
+security:
+  api_key: "super-secure-key"  

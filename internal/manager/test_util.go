@@ -7,23 +7,27 @@ import (
 )
 
 // MockStemManager is a mock implementation of the StemManagerInterface.
+// MockStemManager is a mock implementation of the StemManagerInterface.
 type MockStemManager struct {
 	mock.Mock
 }
 
-func (m *MockStemManager) AddStem(name, version string) error {
-	args := m.Called(name, version)
+func (m *MockStemManager) RegisterStem(config models.StemConfig) error {
+	args := m.Called(config)
 	return args.Error(0)
 }
 
-func (m *MockStemManager) RemoveStem(name, version string) error {
-	args := m.Called(name, version)
+func (m *MockStemManager) UnregisterStem(key storage.StemKey) error {
+	args := m.Called(key)
 	return args.Error(0)
 }
 
-func (m *MockStemManager) GetStemInfo(name, version string) (*models.Stem, error) {
-	args := m.Called(name, version)
-	return args.Get(0).(*models.Stem), args.Error(1)
+func (m *MockStemManager) FetchStemInfo(key storage.StemKey) (*models.Stem, error) {
+	args := m.Called(key)
+	if result := args.Get(0); result != nil {
+		return result.(*models.Stem), args.Error(1)
+	}
+	return nil, args.Error(1)
 }
 
 // MockLeafManager is a mock implementation of the LeafManagerInterface.

@@ -56,3 +56,18 @@ const (
 	StatusStopping LeafStatus = "STOPPING" // The leaf is stopping
 	StatusUnknown  LeafStatus = "UNKNOWN"  // The status of the leaf is unknown
 )
+
+type GlobalConfig struct {
+	Plantarium struct {
+		RootFolder string `yaml:"root_folder"`
+		LogFolder  string `yaml:"log_folder"`
+	} `yaml:"plantarium"`
+	HAProxy struct {
+		URL      string `yaml:"url"`
+		Login    string `yaml:"login"`
+		Password string `yaml:"password"`
+	} `yaml:"haproxy"`
+	Security struct {
+		APIKey string `yaml:"api_key"`
+	} `yaml:"security"`
+}

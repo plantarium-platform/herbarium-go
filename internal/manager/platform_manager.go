@@ -142,3 +142,29 @@ func (p *PlatformManager) resolveCurrentPath(basePath, serviceName string) (stri
 
 	return filepath.EvalSymlinks(currentPath)
 }
+
+func (p *PlatformManager) LoadGlobalConfig() (*models.GlobalConfig, error) {
+	// Determine the root folder
+	rootFolder := os.Getenv("PLANTARIUM_ROOT_FOLDER")
+	if rootFolder == "" {
+		rootFolder = p.BasePath // Default to base path
+	}
+
+	// Construct the path to the global config file
+	configPath := filepath.Join(rootFolder, "system", "herbarium", "config.yaml")
+	configContent, err := os.ReadFile(configPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read global config at %s: %v", configPath, err)
+	}
+
+	// Parse the global config file
+	var config models.GlobalConfig
+	if err := yaml.Unmarshal(configContent, &config); err != nil {
+		return nil, fmt.Errorf("failed to parse global config: %v", err)
+	}
+
+	// Ensure the root folder reflects the current environment variable, if set
+	config.Plantarium.RootFolder = rootFolder
+
+	return &config, nil
+}
