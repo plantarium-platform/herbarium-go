@@ -5,32 +5,17 @@ import (
 	"log"
 
 	"github.com/plantarium-platform/herbarium-go/internal/manager"
-	"github.com/plantarium-platform/herbarium-go/internal/storage"
-	"github.com/plantarium-platform/herbarium-go/internal/storage/repos"
 )
 
 func main() {
-	// Initialize in-memory storage
-	stemStorage := storage.GetHerbariumDB() // Singleton HerbariumDB instance
-
-	// Initialize repositories
-	stemRepo := repos.NewStemRepository(stemStorage)
-	leafRepo := repos.NewLeafRepository(stemStorage)
-
-	// Create MockHAProxyClient (assuming it lives in the same package as mocks)
-	mockHAProxyClient := new(manager.MockHAProxyClient)
-
-	// Create the LeafManager
-	leafManager := manager.NewLeafManager(leafRepo, mockHAProxyClient, stemRepo)
-
-	// Create the StemManager
-	stemManager := manager.NewStemManager(stemRepo, leafManager, mockHAProxyClient)
-
-	// Create the PlatformManager
-	platformManager := manager.NewPlatformManager(stemManager, leafManager, "/path/to/your/base")
+	// Create a new PlatformManager instance with dependencies initialized internally
+	platformManager, err := manager.NewPlatformManagerWithDI()
+	if err != nil {
+		log.Fatalf("Failed to create platform manager: %v", err)
+	}
 
 	// Start the platform
-	err := platformManager.InitializePlatform()
+	err = platformManager.InitializePlatform()
 	if err != nil {
 		log.Fatalf("Failed to initialize the platform: %v", err)
 	}

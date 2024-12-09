@@ -8,18 +8,17 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/plantarium-platform/herbarium-go/internal/haproxy"
+	"github.com/plantarium-platform/herbarium-go/internal/storage"
+	"github.com/plantarium-platform/herbarium-go/internal/storage/repos"
 	"github.com/plantarium-platform/herbarium-go/pkg/models"
 	"gopkg.in/yaml.v2"
 )
 
 // PlatformManagerInterface defines the methods for managing the platform lifecycle.
 type PlatformManagerInterface interface {
-	InitializePlatform() error                                      // Entry point for platform initialization.
-	StopPlatform() error                                            // Gracefully stops the platform and cleans up resources.
-	StartSystemStems() error                                        // Starts core system stems.
-	StartDeploymentStems() error                                    // Starts all deployment stems.
-	GetServiceConfigurations() ([]Service, error)                   // Retrieves all service configurations.
-	GetServiceConfiguration(name, version string) (*Service, error) // Retrieves a specific service configuration.
+	InitializePlatform() error // Entry point for platform initialization.
+	StopPlatform() error       // Gracefully stops the platform and cleans up resources.
 }
 
 // Service represents a service with its configuration and version directory.
@@ -34,44 +33,100 @@ type PlatformManager struct {
 	LeafManager LeafManagerInterface
 	BasePath    string
 	isWindows   bool
+	Config      *models.GlobalConfig
 }
 
-// NewPlatformManager creates a new instance of PlatformManager with the required dependencies.
-func NewPlatformManager(stemManager StemManagerInterface, leafManager LeafManagerInterface, basePath string) *PlatformManager {
+// NewPlatformManager creates a new instance of PlatformManager with the required dependencies (manual DI for tests).
+func NewPlatformManager(
+	stemManager StemManagerInterface,
+	leafManager LeafManagerInterface,
+	config *models.GlobalConfig,
+) *PlatformManager {
 	return &PlatformManager{
 		StemManager: stemManager,
 		LeafManager: leafManager,
-		BasePath:    basePath,
+		BasePath:    config.Plantarium.RootFolder,
+		Config:      config,
 		isWindows:   runtime.GOOS == "windows",
 	}
 }
 
+// NewPlatformManagerWithDI creates a new PlatformManager instance with all dependencies initialized (production use).
+func NewPlatformManagerWithDI() (*PlatformManager, error) {
+	// Load global configuration
+	config, err := loadGlobalConfig()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load global configuration: %w", err)
+	}
+
+	// Shared HAProxyConfig
+	haproxyConfig := haproxy.HAProxyConfig{
+		APIURL:   config.HAProxy.URL,
+		Username: config.HAProxy.Login,
+		Password: config.HAProxy.Password,
+	}
+
+	// Initialize HAProxyConfigurationManager and HAProxyClient
+	haproxyConfigManager := haproxy.NewHAProxyConfigurationManager(haproxyConfig)
+	haproxyClient := haproxy.NewHAProxyClient(haproxyConfig, haproxyConfigManager)
+
+	// Initialize in-memory storage
+	herbariumDB := storage.GetHerbariumDB()
+
+	// Create repositories
+	stemRepo := repos.NewStemRepository(herbariumDB)
+	leafRepo := repos.NewLeafRepository(herbariumDB)
+
+	// Initialize managers with dependencies
+	leafManager := NewLeafManager(leafRepo, haproxyClient, stemRepo)
+	stemManager := NewStemManager(stemRepo, leafManager, haproxyClient)
+
+	// Return a fully initialized PlatformManager
+	return &PlatformManager{
+		StemManager: stemManager,
+		LeafManager: leafManager,
+		BasePath:    config.Plantarium.RootFolder,
+		Config:      config,
+		isWindows:   runtime.GOOS == "windows",
+	}, nil
+}
+
 // InitializePlatform initializes the platform by setting up system and deployment stems.
 func (p *PlatformManager) InitializePlatform() error {
+	log.Println("Initializing platform...")
+
 	if err := p.StartSystemStems(); err != nil {
+		log.Printf("Failed to start system stems: %v", err)
 		return err
 	}
 
 	if err := p.StartDeploymentStems(); err != nil {
+		log.Printf("Failed to start deployment stems: %v", err)
 		return err
 	}
 
+	log.Println("Platform initialized successfully.")
+	return nil
+}
+
+// StartSystemStems starts the core system stems (internal method).
+func (p *PlatformManager) StartSystemStems() error {
+	log.Println("Starting system stems...")
+	// Implementation not provided yet
+	return nil
+}
+
+// StartDeploymentStems starts all configured deployment stems (internal method).
+func (p *PlatformManager) StartDeploymentStems() error {
+	log.Println("Starting deployment stems...")
+	// Implementation not provided yet
 	return nil
 }
 
 // StopPlatform stops all services and performs platform cleanup.
 func (p *PlatformManager) StopPlatform() error {
+	log.Println("Stopping platform...")
 	// TODO: Implement the logic to gracefully shut down all stems.
-	return nil
-}
-
-// StartSystemStems starts the core system stems.
-func (p *PlatformManager) StartSystemStems() error {
-	return nil
-}
-
-// StartDeploymentStems starts all configured deployment stems.
-func (p *PlatformManager) StartDeploymentStems() error {
 	return nil
 }
 
@@ -143,28 +198,24 @@ func (p *PlatformManager) resolveCurrentPath(basePath, serviceName string) (stri
 	return filepath.EvalSymlinks(currentPath)
 }
 
-func (p *PlatformManager) LoadGlobalConfig() (*models.GlobalConfig, error) {
-	// Determine the root folder
+// Internal method to load global configuration
+func loadGlobalConfig() (*models.GlobalConfig, error) {
 	rootFolder := os.Getenv("PLANTARIUM_ROOT_FOLDER")
 	if rootFolder == "" {
-		rootFolder = p.BasePath // Default to base path
+		rootFolder = "/default/path/to/base" // Default path if the environment variable is not set
 	}
 
-	// Construct the path to the global config file
 	configPath := filepath.Join(rootFolder, "system", "herbarium", "config.yaml")
 	configContent, err := os.ReadFile(configPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read global config at %s: %v", configPath, err)
 	}
 
-	// Parse the global config file
 	var config models.GlobalConfig
 	if err := yaml.Unmarshal(configContent, &config); err != nil {
 		return nil, fmt.Errorf("failed to parse global config: %v", err)
 	}
 
-	// Ensure the root folder reflects the current environment variable, if set
 	config.Plantarium.RootFolder = rootFolder
-
 	return &config, nil
 }

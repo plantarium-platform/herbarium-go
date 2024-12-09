@@ -32,13 +32,14 @@ type HAProxyConfigurationManager struct {
 	client *resty.Client
 }
 
-// NewHAProxyConfigurationManager initializes the configuration manager with the provided API URL and credentials.
-func NewHAProxyConfigurationManager(apiURL, username, password string) *HAProxyConfigurationManager {
+// NewHAProxyConfigurationManager initializes the configuration manager with the provided HAProxyConfig.
+func NewHAProxyConfigurationManager(config HAProxyConfig) *HAProxyConfigurationManager {
 	client := resty.New()
-	client.SetBaseURL(apiURL)
-	client.SetBasicAuth(username, password)
+	client.SetBaseURL(config.APIURL)
+	client.SetBasicAuth(config.Username, config.Password)
 	client.SetHeader("Content-Type", "application/json")
 	client.SetDisableWarn(true)
+
 	return &HAProxyConfigurationManager{
 		client: client,
 	}
