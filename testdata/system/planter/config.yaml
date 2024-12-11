@@ -1,6 +1,6 @@
-name: hello-service
-url: /hello
-command: "java -jar hello-service.jar"
+name: planter
+url: /planter
+command: "./planter.sh"
 env:
   GLOBAL_VAR: "production"
 dependencies:

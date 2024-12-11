@@ -3,6 +3,7 @@ package manager
 import (
 	"errors"
 	"github.com/plantarium-platform/herbarium-go/pkg/models"
+	"github.com/stretchr/testify/mock"
 	"os"
 	"path/filepath"
 	"testing"
@@ -10,59 +11,10 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestPlatformManager_StartSystemStems(t *testing.T) {
-	mockStemManager := new(MockStemManager)
-	mockLeafManager := new(MockLeafManager)
-
-	config := &models.GlobalConfig{
-		Plantarium: struct {
-			RootFolder string `yaml:"root_folder"`
-			LogFolder  string `yaml:"log_folder"`
-		}{
-			RootFolder: "../../testdata",
-			LogFolder:  "/var/log/plantarium",
-		},
-	}
-
-	manager := NewPlatformManager(mockStemManager, mockLeafManager, config)
-
-	mockStemManager.On("StartSystemStems").Return(nil)
-
-	err := manager.StartSystemStems()
-	assert.NoError(t, err, "Expected no error when starting system stems")
-
-	mockStemManager.AssertCalled(t, "StartSystemStems")
-}
-
-func TestPlatformManager_StartDeploymentStems(t *testing.T) {
-	mockStemManager := new(MockStemManager)
-	mockLeafManager := new(MockLeafManager)
-
-	config := &models.GlobalConfig{
-		Plantarium: struct {
-			RootFolder string `yaml:"root_folder"`
-			LogFolder  string `yaml:"log_folder"`
-		}{
-			RootFolder: "../../testdata",
-			LogFolder:  "/var/log/plantarium",
-		},
-	}
-
-	manager := NewPlatformManager(mockStemManager, mockLeafManager, config)
-
-	mockStemManager.On("StartDeploymentStems").Return(nil)
-
-	err := manager.StartDeploymentStems()
-	assert.NoError(t, err, "Expected no error when starting deployment stems")
-
-	mockStemManager.AssertCalled(t, "StartDeploymentStems")
-}
-
 func TestPlatformManager_GetServiceConfigurations(t *testing.T) {
-	// Set environment variable to testdata folder
 	testRoot := "../../testdata"
 	err := os.Setenv("PLANTARIUM_ROOT_FOLDER", testRoot)
-	assert.NoError(t, err, "Failed to set environment variable for root folder")
+	assert.NoError(t, err, "Failed to set PLANTARIUM_ROOT_FOLDER environment variable")
 	defer os.Unsetenv("PLANTARIUM_ROOT_FOLDER")
 
 	// Ensure the configuration file exists
@@ -70,104 +22,137 @@ func TestPlatformManager_GetServiceConfigurations(t *testing.T) {
 	_, err = os.Stat(configPath)
 	assert.NoError(t, err, "Configuration file should exist at %s", configPath)
 
-	// Initialize the PlatformManager using the test configuration
+	// Initialize PlatformManager
 	platformManager, err := NewPlatformManagerWithDI()
 	assert.NoError(t, err, "Failed to create PlatformManagerWithDI")
 	assert.NotNil(t, platformManager, "PlatformManager should not be nil")
 
 	// Retrieve service configurations
-	services, err := platformManager.GetServiceConfigurations()
+	systemServices, deploymentServices, err := platformManager.GetServiceConfigurations()
 	assert.NoError(t, err, "Failed to get service configurations")
-	assert.NotEmpty(t, services, "Expected to find service configurations")
 
-	// Validate the retrieved configuration for a known service
-	assert.Equal(t, 1, len(services), "Expected 1 service configuration")
+	// Validate system services
+	assert.Len(t, systemServices, 1, "Expected 1 system service configuration")
+	planterService := systemServices[0]
+	assert.Equal(t, "planter", planterService.Config.Name, "Expected system service name 'planter'")
+	assert.Equal(t, "/planter", planterService.Config.URL, "Expected system service URL '/planter'")
+	assert.Equal(t, "./planter.sh", planterService.Config.Command, "Expected system service command './planter.sh'")
+	assert.Equal(t, "production", planterService.Config.Env["GLOBAL_VAR"], "Expected GLOBAL_VAR to be 'production'")
+	assert.Equal(t, "test", planterService.Config.Dependencies[0].Schema, "Expected dependency schema 'test'")
 
-	helloService := services[0]
-	assert.Equal(t, "hello-service", helloService.Config.Name, "Expected service name 'hello-service'")
-	assert.Equal(t, "/hello", helloService.Config.URL, "Expected URL '/hello'")
-	assert.Equal(t, "java -jar hello-service.jar", helloService.Config.Command, "Expected command to run the service")
+	// Validate deployment services
+	assert.Len(t, deploymentServices, 1, "Expected 1 deployment service configuration")
+	helloService := deploymentServices[0]
+	assert.Equal(t, "hello-service", helloService.Config.Name, "Expected deployment service name 'hello-service'")
+	assert.Equal(t, "/hello", helloService.Config.URL, "Expected deployment service URL '/hello'")
+	assert.Equal(t, "java -jar hello-service.jar", helloService.Config.Command, "Expected deployment service command 'java -jar hello-service.jar'")
 	assert.Equal(t, "production", helloService.Config.Env["GLOBAL_VAR"], "Expected GLOBAL_VAR to be 'production'")
 	assert.Equal(t, "test", helloService.Config.Dependencies[0].Schema, "Expected dependency schema 'test'")
 }
 
-// TestPlatformManager_InitializePlatform validates the initialization flow.
 func TestPlatformManager_InitializePlatform(t *testing.T) {
+	// Set environment variable for the testdata folder
+	testRoot := "../../testdata"
+	err := os.Setenv("PLANTARIUM_ROOT_FOLDER", testRoot)
+	assert.NoError(t, err, "Failed to set PLANTARIUM_ROOT_FOLDER environment variable")
+	defer os.Unsetenv("PLANTARIUM_ROOT_FOLDER")
+
 	t.Run("successful initialization", func(t *testing.T) {
-		// Mock dependencies
+		// Mock StemManager
 		mockStemManager := new(MockStemManager)
-		mockLeafManager := new(MockLeafManager)
-		globalConfig := &models.GlobalConfig{
-			HAProxy: struct {
-				URL      string `yaml:"url"`
-				Login    string `yaml:"login"`
-				Password string `yaml:"password"`
+		platformManager := NewPlatformManager(mockStemManager, nil, &models.GlobalConfig{
+			Plantarium: struct {
+				RootFolder string `yaml:"root_folder"`
+				LogFolder  string `yaml:"log_folder"`
 			}{
-				URL:      "http://localhost:8080",
-				Login:    "admin",
-				Password: "password",
+				RootFolder: testRoot,
 			},
-		}
+		})
 
-		// PlatformManager instance
-		platformManager := NewPlatformManager(mockStemManager, mockLeafManager, globalConfig)
-
-		// Mock expected behavior
-		mockStemManager.On("StartSystemStems").Return(nil)
-		mockStemManager.On("StartDeploymentStems").Return(nil)
+		// Mock RegisterStem behavior
+		mockStemManager.On("RegisterStem", mock.Anything).Return(nil)
 
 		// Call InitializePlatform
 		err := platformManager.InitializePlatform()
-		assert.NoError(t, err)
+		assert.NoError(t, err, "Expected InitializePlatform to succeed")
 
-		// Verify calls
-		mockStemManager.AssertCalled(t, "StartSystemStems")
-		mockStemManager.AssertCalled(t, "StartDeploymentStems")
+		// Verify all stems were registered
+		mockStemManager.AssertNumberOfCalls(t, "RegisterStem", 2)
+		mockStemManager.AssertCalled(t, "RegisterStem", mock.MatchedBy(func(config models.StemConfig) bool {
+			return config.Name == "planter"
+		}))
+		mockStemManager.AssertCalled(t, "RegisterStem", mock.MatchedBy(func(config models.StemConfig) bool {
+			return config.Name == "hello-service"
+		}))
 	})
 
 	t.Run("system stem initialization failure", func(t *testing.T) {
-		// Mock dependencies
+		// Mock StemManager
 		mockStemManager := new(MockStemManager)
-		mockLeafManager := new(MockLeafManager)
-		globalConfig := &models.GlobalConfig{}
+		platformManager := NewPlatformManager(mockStemManager, nil, &models.GlobalConfig{
+			Plantarium: struct {
+				RootFolder string `yaml:"root_folder"`
+				LogFolder  string `yaml:"log_folder"`
+			}{
+				RootFolder: testRoot,
+			},
+		})
 
-		// PlatformManager instance
-		platformManager := NewPlatformManager(mockStemManager, mockLeafManager, globalConfig)
-
-		// Mock expected behavior
-		mockStemManager.On("StartSystemStems").Return(errors.New("system stem failure"))
+		// Mock RegisterStem behavior for system stems
+		mockStemManager.On("RegisterStem", mock.MatchedBy(func(config models.StemConfig) bool {
+			return config.Name == "planter"
+		})).Return(errors.New("file not found"))
 
 		// Call InitializePlatform
 		err := platformManager.InitializePlatform()
-		assert.Error(t, err)
-		assert.EqualError(t, err, "system stem failure")
+		assert.Error(t, err, "Expected error due to system stem failure")
+		assert.Contains(t, err.Error(), "failed to register system stem planter", "Error should indicate system stem failure")
+		assert.Contains(t, err.Error(), "file not found", "Error should include the root cause")
 
-		// Verify calls
-		mockStemManager.AssertCalled(t, "StartSystemStems")
-		mockStemManager.AssertNotCalled(t, "StartDeploymentStems")
+		// Verify system stem failed and deployment stems were not attempted
+		mockStemManager.AssertCalled(t, "RegisterStem", mock.MatchedBy(func(config models.StemConfig) bool {
+			return config.Name == "planter"
+		}))
+		mockStemManager.AssertNotCalled(t, "RegisterStem", mock.MatchedBy(func(config models.StemConfig) bool {
+			return config.Name == "hello-service"
+		}))
 	})
 
 	t.Run("deployment stem initialization failure", func(t *testing.T) {
-		// Mock dependencies
+		// Mock StemManager
 		mockStemManager := new(MockStemManager)
-		mockLeafManager := new(MockLeafManager)
-		globalConfig := &models.GlobalConfig{}
+		platformManager := NewPlatformManager(mockStemManager, nil, &models.GlobalConfig{
+			Plantarium: struct {
+				RootFolder string `yaml:"root_folder"`
+				LogFolder  string `yaml:"log_folder"`
+			}{
+				RootFolder: testRoot,
+			},
+		})
 
-		// PlatformManager instance
-		platformManager := NewPlatformManager(mockStemManager, mockLeafManager, globalConfig)
+		// Mock RegisterStem behavior for system stems
+		mockStemManager.On("RegisterStem", mock.MatchedBy(func(config models.StemConfig) bool {
+			return config.Name == "planter"
+		})).Return(nil)
 
-		// Mock expected behavior
-		mockStemManager.On("StartSystemStems").Return(nil)
-		mockStemManager.On("StartDeploymentStems").Return(errors.New("deployment stem failure"))
+		// Mock failure for deployment stems
+		mockStemManager.On("RegisterStem", mock.MatchedBy(func(config models.StemConfig) bool {
+			return config.Name == "hello-service"
+		})).Return(errors.New("insufficient permissions"))
 
 		// Call InitializePlatform
 		err := platformManager.InitializePlatform()
-		assert.Error(t, err)
-		assert.EqualError(t, err, "deployment stem failure")
+		assert.Error(t, err, "Expected error due to deployment stem failure")
+		assert.Contains(t, err.Error(), "failed to register deployment stem hello-service", "Error should indicate deployment stem failure")
+		assert.Contains(t, err.Error(), "insufficient permissions", "Error should include the root cause")
 
-		// Verify calls
-		mockStemManager.AssertCalled(t, "StartSystemStems")
-		mockStemManager.AssertCalled(t, "StartDeploymentStems")
+		// Verify both system and failed deployment stem were attempted
+		mockStemManager.AssertCalled(t, "RegisterStem", mock.MatchedBy(func(config models.StemConfig) bool {
+			return config.Name == "planter"
+		}))
+		mockStemManager.AssertCalled(t, "RegisterStem", mock.MatchedBy(func(config models.StemConfig) bool {
+			return config.Name == "hello-service"
+		}))
 	})
 }
 

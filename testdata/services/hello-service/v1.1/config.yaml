@@ -1,10 +1,9 @@
-services:
-  - name: hello-service
-    url: /hello
-    command: "java -jar hello-service.jar"
-    env:
-      GLOBAL_VAR: "production"
-    dependencies:
-      - name: postgres
-        schema: test
-    version: "v1.1"
+name: hello-service
+url: /hello
+command: "java -jar hello-service.jar"
+env:
+  GLOBAL_VAR: "production"
+dependencies:
+  - name: postgres
+    schema: test
+version: "v1.1"
