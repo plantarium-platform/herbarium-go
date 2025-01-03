@@ -22,7 +22,7 @@ type HAProxyConfigurationManagerInterface interface {
 	CommitTransaction(transactionID string) error
 	RollbackTransaction(transactionID string) error
 	CreateBackend(backendName, transactionID string) error
-	AddServer(backendName, serverName, serviceAddress, transactionID string) error
+	AddServer(backendName, serverName, host string, port int, transactionID string) error
 	DeleteServer(backendName, serverName, transactionID string) error
 	GetServersFromBackend(backendName, transactionID string) ([]HAProxyServer, error)
 }
@@ -115,48 +115,111 @@ func (c *HAProxyConfigurationManager) RollbackTransaction(transactionID string) 
 
 // CreateBackend creates a new backend in the HAProxy configuration.
 func (c *HAProxyConfigurationManager) CreateBackend(backendName, transactionID string) error {
-	resp, err := c.client.R().SetQueryParam("transaction_id", transactionID).Get("/configuration/backends")
+	log.Printf("[HAProxyConfigurationManager] Checking if backend exists: backendName=%s, transactionID=%s", backendName, transactionID)
+
+	// Check if the backend exists by name
+	resp, err := c.client.R().
+		SetQueryParam("transaction_id", transactionID).
+		Get(fmt.Sprintf("/configuration/backends/%s", backendName))
 	if err != nil {
+		log.Printf("[HAProxyConfigurationManager] Error checking backend existence: backendName=%s, transactionID=%s, error=%v", backendName, transactionID, err)
 		return fmt.Errorf("failed to check if backend exists: %v", err)
 	}
 
-	if resp.StatusCode() == 404 {
-		backendData := map[string]interface{}{
-			"name": backendName,
-			"mode": "http",
-			"balance": map[string]string{
-				"algorithm": "roundrobin",
-			},
-		}
-		_, err = c.client.R().
+	log.Printf("[HAProxyConfigurationManager] Backend existence check response: statusCode=%d, responseBody=%s", resp.StatusCode(), resp.String())
+
+	// If the backend exists, delete it
+	if resp.StatusCode() == 200 {
+		log.Printf("[HAProxyConfigurationManager] Backend %s exists. Deleting backend...", backendName)
+
+		deleteResp, err := c.client.R().
 			SetQueryParam("transaction_id", transactionID).
-			SetBody(backendData).
-			Post("/configuration/backends")
+			Delete(fmt.Sprintf("/configuration/backends/%s", backendName))
 		if err != nil {
-			return fmt.Errorf("failed to create backend: %v", err)
+			log.Printf("[HAProxyConfigurationManager] Error deleting backend: backendName=%s, transactionID=%s, error=%v", backendName, transactionID, err)
+			return fmt.Errorf("failed to delete existing backend: %v", err)
 		}
 
-		log.Printf("Backend %s created successfully\n", backendName)
-	} else if resp.StatusCode() != 200 {
-		return fmt.Errorf("failed to check backend, status code: %d, response: %s", resp.StatusCode(), resp.String())
+		log.Printf("[HAProxyConfigurationManager] Backend deletion response: statusCode=%d, responseBody=%s", deleteResp.StatusCode(), deleteResp.String())
+
+		if deleteResp.StatusCode() != 202 {
+			log.Printf("[HAProxyConfigurationManager] Unexpected status code while deleting backend: backendName=%s, transactionID=%s, statusCode=%d, responseBody=%s",
+				backendName, transactionID, deleteResp.StatusCode(), deleteResp.String())
+			return fmt.Errorf("unexpected status code while deleting backend: %d, response: %s", deleteResp.StatusCode(), deleteResp.String())
+		}
+		log.Printf("[HAProxyConfigurationManager] Backend %s deleted successfully.", backendName)
 	}
 
+	// Create a new backend
+	log.Printf("[HAProxyConfigurationManager] Creating backend: %s", backendName)
+
+	backendData := map[string]interface{}{
+		"name": backendName,
+		"mode": "http",
+		"balance": map[string]string{
+			"algorithm": "roundrobin",
+		},
+		"http_connection_mode": "http-server-close",
+		"redispatch": map[string]interface{}{
+			"enabled": "enabled",
+		},
+		"http-check": map[string]interface{}{
+			"method":  "HEAD",
+			"uri":     "/",
+			"version": "HTTP/1.1",
+			"headers": []map[string]string{
+				{
+					"name":  "Host",
+					"value": "localhost",
+				},
+			},
+		},
+	}
+
+	createResp, err := c.client.R().
+		SetQueryParam("transaction_id", transactionID).
+		SetBody(backendData).
+		Post("/configuration/backends")
+	if err != nil {
+		log.Printf("[HAProxyConfigurationManager] Error creating backend: backendName=%s, transactionID=%s, error=%v", backendName, transactionID, err)
+		return fmt.Errorf("failed to create backend: %v", err)
+	}
+
+	log.Printf("[HAProxyConfigurationManager] Backend creation response: statusCode=%d, responseBody=%s", createResp.StatusCode(), createResp.String())
+
+	if createResp.StatusCode() != 202 {
+		log.Printf("[HAProxyConfigurationManager] Unexpected status code while creating backend: backendName=%s, transactionID=%s, statusCode=%d, responseBody=%s",
+			backendName, transactionID, createResp.StatusCode(), createResp.String())
+		return fmt.Errorf("unexpected status code while creating backend: %d, response: %s", createResp.StatusCode(), createResp.String())
+	}
+
+	log.Printf("[HAProxyConfigurationManager] Backend %s created successfully", backendName)
 	return nil
 }
 
 // AddServer adds a new server to the specified backend in the HAProxy configuration.
-func (c *HAProxyConfigurationManager) AddServer(backendName, serverName, serviceAddress, transactionID string) error {
-	_, err := c.client.R().
+func (c *HAProxyConfigurationManager) AddServer(backendName, serverName, host string, port int, transactionID string) error {
+	resp, err := c.client.R().
 		SetQueryParam("transaction_id", transactionID).
 		SetBody(map[string]interface{}{
-			"name":    serverName,     // Using server name
-			"address": serviceAddress, // The service address (IP + Port)
+			"name":    serverName,
+			"address": host,
+			"port":    port,
 		}).
 		Post(fmt.Sprintf("/configuration/backends/%s/servers", backendName))
 	if err != nil {
-		return fmt.Errorf("failed to add server to backend: %v", err)
+		return fmt.Errorf("failed to add server to backend %s: %v", backendName, err)
 	}
 
+	// Analyze the response
+	if resp.StatusCode() != 202 {
+		return fmt.Errorf(
+			"unexpected status code %d when adding server to backend %s: response: %s",
+			resp.StatusCode(), backendName, resp.String(),
+		)
+	}
+
+	log.Printf("[HAProxyConfigurationManager] Server %s (host=%s, port=%d) added to backend %s successfully. Status: %d", serverName, host, port, backendName, resp.StatusCode())
 	return nil
 }
 

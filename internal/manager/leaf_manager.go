@@ -7,6 +7,7 @@ import (
 	"github.com/plantarium-platform/herbarium-go/internal/storage"
 	"github.com/plantarium-platform/herbarium-go/internal/storage/repos"
 	"github.com/plantarium-platform/herbarium-go/pkg/models"
+	"io"
 	"log"
 	"net"
 	"os"
@@ -15,6 +16,12 @@ import (
 	"sort"
 	"strings"
 	"time"
+)
+
+// Global variables for timeout and sleep interval
+const (
+	ServiceStartupTimeout = 30 * time.Second
+	ServiceCheckInterval  = 50 * time.Millisecond
 )
 
 // LeafManagerInterface defines methods for managing leafs.
@@ -104,7 +111,7 @@ func findAvailablePort(startPort int) (int, error) {
 // 2. A leaf ID is generated: `ping-service-stem-v1.0-1672574400`.
 // 3. Port 8000 is found to be available and assigned.
 // 4. The process is started, and a PID (e.g., 12345) is obtained.
-// 5. HAProxy binds the leaf to the `ping-backend` backend on `127.0.0.1:8000`.
+// 5. HAProxy binds the leaf to the `ping-backend` backend on `localhost:8000`.
 // 6. The repository saves the leaf details under `ping-service-stem`.
 // 7. The method returns the leaf ID `ping-service-stem-v1.0-1672574400`.
 func (l *LeafManager) StartLeaf(stemName, version string) (string, error) {
@@ -131,7 +138,7 @@ func (l *LeafManager) StartLeaf(stemName, version string) (string, error) {
 		return "", fmt.Errorf("failed to start leaf process: %v", err)
 	}
 
-	err = l.HAProxyClient.BindLeaf(stem.HAProxyBackend, leafID, "127.0.0.1", leafPort)
+	err = l.HAProxyClient.BindLeaf(stem.HAProxyBackend, leafID, "localhost", leafPort)
 	if err != nil {
 		log.Printf("Failed to bind leaf %s to HAProxy: %v", leafID, err)
 		return "", fmt.Errorf("failed to bind leaf to HAProxy: %v", err)
@@ -143,7 +150,7 @@ func (l *LeafManager) StartLeaf(stemName, version string) (string, error) {
 		return "", fmt.Errorf("leaf started, but failed to save to repository: %v", err)
 	}
 
-	leafURL := fmt.Sprintf("http://127.0.0.1:%d", leafPort)
+	leafURL := fmt.Sprintf("http://localhost:%d", leafPort)
 	log.Printf("Leaf started successfully: ID=%s, URL=%s", leafID, leafURL)
 
 	return leafID, nil
@@ -218,96 +225,125 @@ func (l *LeafManager) startLeafInternal(stemName, stemVersion, leafID string, le
 	}
 
 	executable := commandParts[0]
-	args := commandParts[1:]
+	args := append(commandParts[1:], fmt.Sprintf("--server.port=%d", leafPort))
 
+	logFolder := getLogFolder()
+	logFile, err := setupLogFile(logFolder, leafID)
+	if err != nil {
+		return 0, err
+	}
+	defer logFile.Close()
+
+	workingDir, err := getWorkingDirectory(stemName, stemVersion)
+	if err != nil {
+		return 0, err
+	}
+
+	cmd := setupCommand(executable, args, workingDir, leafPort)
+	stdoutPipe, stderrPipe, err := setupPipes(cmd)
+	if err != nil {
+		return 0, err
+	}
+
+	if err := cmd.Start(); err != nil {
+		return 0, fmt.Errorf("failed to start leaf process: %v", err)
+	}
+
+	go logPipeOutput(stdoutPipe, logFile, leafID, "stdout")
+	go logPipeOutput(stderrPipe, logFile, leafID, "stderr")
+	go handleProcessCompletion(cmd, logFile, leafID)
+
+	if err := waitForServiceToStart(leafPort); err != nil {
+		return 0, fmt.Errorf("leaf service not available on port %d: %v", leafPort, err)
+	}
+
+	return cmd.Process.Pid, nil
+}
+
+func getLogFolder() string {
 	logFolder := os.Getenv("PLANTARIUM_LOG_FOLDER")
 	if logFolder == "" {
 		logFolder = "."
 	}
+	return logFolder
+}
 
+func setupLogFile(logFolder, leafID string) (*os.File, error) {
 	if err := os.MkdirAll(logFolder, os.ModePerm); err != nil {
-		return 0, fmt.Errorf("failed to create log folder: %v", err)
+		return nil, fmt.Errorf("failed to create log folder: %v", err)
 	}
-
 	logFile := fmt.Sprintf("%s/%s.log", logFolder, leafID)
 	log.Printf("[Leaf %s] Using log file: %s", leafID, logFile)
+	return os.Create(logFile)
+}
 
+func getWorkingDirectory(stemName, stemVersion string) (string, error) {
 	rootFolder := os.Getenv("PLANTARIUM_ROOT_FOLDER")
 	if rootFolder == "" {
-		return 0, fmt.Errorf("PLANTARIUM_ROOT_FOLDER environment variable is not set")
+		return "", fmt.Errorf("PLANTARIUM_ROOT_FOLDER environment variable is not set")
 	}
 	workingDir := filepath.Join(rootFolder, "services", stemName, stemVersion)
-
 	if _, err := os.Stat(workingDir); os.IsNotExist(err) {
-		return 0, fmt.Errorf("working directory %s does not exist: %v", workingDir, err)
+		return "", fmt.Errorf("working directory %s does not exist: %v", workingDir, err)
 	}
+	return workingDir, nil
+}
 
-	log.Printf("Starting leaf process: ID=%s, Command=%s %s, Directory=%s", leafID, executable, strings.Join(args, " "), workingDir)
-
+func setupCommand(executable string, args []string, workingDir string, leafPort int) *exec.Cmd {
 	cmd := exec.Command(executable, args...)
 	cmd.Dir = workingDir
+	cmd.Env = append(os.Environ(), fmt.Sprintf("MICRONAUT_SERVER_PORT=%d", leafPort))
+	log.Printf("Executing command: %s %s in directory: %s", executable, strings.Join(args, " "), workingDir)
+	return cmd
+}
 
-	logFileHandle, err := os.Create(logFile)
+func setupPipes(cmd *exec.Cmd) (stdout, stderr io.ReadCloser, err error) {
+	stdout, err = cmd.StdoutPipe()
 	if err != nil {
-		return 0, fmt.Errorf("failed to create log file: %v", err)
+		return nil, nil, fmt.Errorf("failed to create stdout pipe: %v", err)
 	}
-
-	if err := cmd.Start(); err != nil {
-		logFileHandle.Close()
-		return 0, fmt.Errorf("failed to start leaf process: %v", err)
-	}
-
-	// Create separate pipes for stdout and stderr
-	stdoutPipe, err := cmd.StdoutPipe()
+	stderr, err = cmd.StderrPipe()
 	if err != nil {
-		logFileHandle.Close()
-		return 0, fmt.Errorf("failed to create stdout pipe: %v", err)
+		return nil, nil, fmt.Errorf("failed to create stderr pipe: %v", err)
 	}
+	return
+}
 
-	stderrPipe, err := cmd.StderrPipe()
-	if err != nil {
-		logFileHandle.Close()
-		return 0, fmt.Errorf("failed to create stderr pipe: %v", err)
+func logPipeOutput(pipe io.ReadCloser, logFile *os.File, leafID, pipeType string) {
+	scanner := bufio.NewScanner(pipe)
+	for scanner.Scan() {
+		line := scanner.Text()
+		log.Printf("[Leaf %s %s] %s", leafID, pipeType, line)
+		if _, err := logFile.WriteString(line + "\n"); err != nil {
+			log.Printf("[Leaf %s] Error writing to log file: %v", leafID, err)
+		}
 	}
+}
 
-	go func() {
-		stdoutScanner := bufio.NewScanner(stdoutPipe)
-		for stdoutScanner.Scan() {
-			line := stdoutScanner.Text()
-			log.Printf("[Leaf %s stdout] %s", leafID, line)       // Log to platform logs
-			_, writeErr := logFileHandle.WriteString(line + "\n") // Save to log file
-			if writeErr != nil {
-				log.Printf("[Leaf %s] Error writing to log file: %v", leafID, writeErr)
-			}
-		}
-	}()
+func handleProcessCompletion(cmd *exec.Cmd, logFile *os.File, leafID string) {
+	if err := cmd.Wait(); err != nil {
+		log.Printf("[Leaf %s] Process with PID %d finished with error: %v", leafID, cmd.Process.Pid, err)
+	} else {
+		log.Printf("[Leaf %s] Process with PID %d finished successfully", leafID, cmd.Process.Pid)
+	}
+	time.Sleep(ServiceCheckInterval)
+	if err := logFile.Close(); err != nil {
+		log.Printf("[Leaf %s] Failed to close log file: %v", leafID, err)
+	} else {
+		log.Printf("[Leaf %s] Log file closed successfully", leafID)
+	}
+}
 
-	go func() {
-		stderrScanner := bufio.NewScanner(stderrPipe)
-		for stderrScanner.Scan() {
-			line := stderrScanner.Text()
-			log.Printf("[Leaf %s stderr] %s", leafID, line)       // Log to platform logs
-			_, writeErr := logFileHandle.WriteString(line + "\n") // Save to log file
-			if writeErr != nil {
-				log.Printf("[Leaf %s] Error writing to log file: %v", leafID, writeErr)
-			}
+func waitForServiceToStart(port int) error {
+	start := time.Now()
+	address := fmt.Sprintf("localhost:%d", port)
+	for time.Since(start) < ServiceStartupTimeout {
+		conn, err := net.DialTimeout("tcp", address, ServiceCheckInterval)
+		if err == nil {
+			_ = conn.Close()
+			return nil
 		}
-	}()
-
-	go func() {
-		err := cmd.Wait()
-		if err != nil {
-			log.Printf("[Leaf %s] Process with PID %d finished with error: %v", leafID, cmd.Process.Pid, err)
-		} else {
-			log.Printf("[Leaf %s] Process with PID %d finished successfully", leafID, cmd.Process.Pid)
-		}
-		time.Sleep(100 * time.Millisecond)
-		if closeErr := logFileHandle.Close(); closeErr != nil {
-			log.Printf("[Leaf %s] Failed to close log file %s: %v", leafID, logFile, closeErr)
-		} else {
-			log.Printf("[Leaf %s] Log file %s successfully closed", leafID, logFile)
-		}
-	}()
-
-	return cmd.Process.Pid, nil
+		time.Sleep(ServiceCheckInterval)
+	}
+	return fmt.Errorf("timeout waiting for service on port %d", port)
 }

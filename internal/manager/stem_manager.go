@@ -59,7 +59,7 @@ func (s *StemManager) RegisterStem(config models.StemConfig) error {
 		Name:           config.Name,
 		Type:           models.StemTypeDeployment,
 		WorkingURL:     config.URL,
-		HAProxyBackend: config.URL, // Use URL as the HAProxy backend identifier
+		HAProxyBackend: cleanURL, // Use URL as the HAProxy backend identifier
 		Version:        config.Version,
 		Environment:    config.Env,
 		LeafInstances:  make(map[string]*models.Leaf),

@@ -19,7 +19,7 @@ func TestStemManager_AddStem(t *testing.T) {
 
 	mockHAProxyClient.On("BindStem", "test").Return(nil)
 	// Mock leaf creation logic
-	mockHAProxyClient.On("BindLeaf", mock.Anything, mock.Anything, "127.0.0.1", mock.AnythingOfType("int")).Return(nil)
+	mockHAProxyClient.On("BindLeaf", mock.Anything, mock.Anything, "localhost", mock.AnythingOfType("int")).Return(nil)
 
 	stemManager := NewStemManager(stemRepo, leafManager, mockHAProxyClient)
 

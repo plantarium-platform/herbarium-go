@@ -60,7 +60,7 @@ func TestStartLeafWithPingService(t *testing.T) {
 	leafStorage.Stems[stemKey] = stem
 
 	mockHAProxyClient := new(MockHAProxyClient)
-	mockHAProxyClient.On("BindLeaf", "ping-backend", leafID, "127.0.0.1", leafPort).Return(nil)
+	mockHAProxyClient.On("BindLeaf", "ping-backend", leafID, "localhost", leafPort).Return(nil)
 
 	leafManager := NewLeafManager(leafRepo, mockHAProxyClient, stemRepo)
 
@@ -93,7 +93,7 @@ func TestStartLeafWithPingService(t *testing.T) {
 	assert.NoError(t, err)
 
 	log.Printf("Log file contents: %s", string(logContents[:n]))
-	assert.Contains(t, string(logContents[:n]), "from 127.0.0.1")
+	assert.Contains(t, string(logContents[:n]), "from localhost")
 	logFile.Close()
 
 	t.Cleanup(func() {
@@ -116,9 +116,9 @@ func TestStartLeafWithPingService(t *testing.T) {
 func determinePingCommand() string {
 	switch runtime.GOOS {
 	case "windows":
-		return "ping 127.0.0.1 -t"
+		return "ping localhost -t"
 	default:
-		return "ping 127.0.0.1"
+		return "ping localhost"
 	}
 }
 
@@ -198,7 +198,7 @@ func TestStopLeaf(t *testing.T) {
 	leafPort := 8000
 
 	// Start a ping process and get its PID
-	cmd := exec.Command("ping", "127.0.0.1", "-t")
+	cmd := exec.Command("ping", "localhost", "-t")
 	err := cmd.Start()
 	assert.NoError(t, err, "failed to start ping process")
 

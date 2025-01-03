@@ -3,25 +3,14 @@ package main
 import (
 	"fmt"
 	"log"
+	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/plantarium-platform/herbarium-go/internal/manager"
-	"go.uber.org/zap"
 )
 
 func main() {
-	// Initialize the Zap logger
-	logger, err := zap.NewProduction()
-	if err != nil {
-		log.Fatalf("Failed to initialize Zap logger: %v", err)
-	}
-	defer logger.Sync()
-
-	// Replace the standard logger with Zap
-	zap.ReplaceGlobals(logger)
-	if err := zap.RedirectStdLog(logger); err != nil {
-		log.Fatalf("Failed to redirect standard log to Zap: %v", err)
-	}
-
 	// Create a new PlatformManager instance with dependencies initialized internally
 	platformManager, err := manager.NewPlatformManagerWithDI()
 	if err != nil {
@@ -35,4 +24,15 @@ func main() {
 	}
 
 	fmt.Println("Platform started successfully")
+	log.Println("Waiting for termination signal...")
+
+	// Create a channel to listen for OS signals
+	signalChannel := make(chan os.Signal, 1)
+	signal.Notify(signalChannel, os.Interrupt, syscall.SIGTERM)
+
+	// Block until a termination signal is received
+	<-signalChannel
+
+	log.Println("Termination signal received. Shutting down...")
+	// Perform any necessary cleanup here before exiting
 }
