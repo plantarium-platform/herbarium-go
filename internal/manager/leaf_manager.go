@@ -230,6 +230,7 @@ func (l *LeafManager) startLeafInternal(stemName, stemVersion, leafID string, le
 	}
 
 	logFile := fmt.Sprintf("%s/%s.log", logFolder, leafID)
+	log.Printf("[Leaf %s] Using log file: %s", leafID, logFile)
 
 	rootFolder := os.Getenv("PLANTARIUM_ROOT_FOLDER")
 	if rootFolder == "" {
