@@ -106,39 +106,38 @@ func findAvailablePort(startPort int) (int, error) {
 // 6. The repository saves the leaf details under `ping-service-stem`.
 // 7. The method returns the leaf ID `ping-service-stem-v1.0-1672574400`.
 func (l *LeafManager) StartLeaf(stemName, version string) (string, error) {
-	// Generate a unique leaf ID based on the stem name, version, and current timestamp
+	log.Printf("Starting leaf for stem: %s, version: %s", stemName, version)
+
 	leafID := fmt.Sprintf("%s-%s-%d", stemName, version, time.Now().UnixNano())
 
-	// Find the first available port starting from 8000
 	leafPort, err := findAvailablePort(8000)
 	if err != nil {
 		return "", fmt.Errorf("failed to find an available port: %v", err)
 	}
 
-	// Use StemKey to retrieve the stem configuration from the database
 	stemKey := storage.StemKey{Name: stemName, Version: version}
 	stem, err := l.StemRepo.FetchStem(stemKey)
 	if err != nil {
 		return "", fmt.Errorf("failed to find stem configuration: %v", err)
 	}
 
-	// Start the leaf process and get the PID
 	pid, err := l.startLeafInternal(stemName, version, leafID, leafPort, stem.Config)
 	if err != nil {
 		return "", fmt.Errorf("failed to start leaf process: %v", err)
 	}
 
-	// Bind the leaf service to HAProxy
 	err = l.HAProxyClient.BindLeaf(stem.HAProxyBackend, leafID, "127.0.0.1", leafPort)
 	if err != nil {
 		return "", fmt.Errorf("failed to bind leaf to HAProxy: %v", err)
 	}
 
-	// Save leaf details to the repository
 	err = l.LeafRepo.AddLeaf(stemKey, leafID, leafID, pid, leafPort, time.Now())
 	if err != nil {
 		return "", fmt.Errorf("leaf started, but failed to save to repository: %v", err)
 	}
+
+	leafURL := fmt.Sprintf("http://127.0.0.1:%d", leafPort)
+	log.Printf("Leaf started successfully: ID: %s, URL: %s", leafID, leafURL)
 
 	return leafID, nil
 }
