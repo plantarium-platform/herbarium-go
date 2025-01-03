@@ -112,32 +112,37 @@ func (l *LeafManager) StartLeaf(stemName, version string) (string, error) {
 
 	leafPort, err := findAvailablePort(8000)
 	if err != nil {
+		log.Printf("Failed to find an available port: %v", err)
 		return "", fmt.Errorf("failed to find an available port: %v", err)
 	}
 
 	stemKey := storage.StemKey{Name: stemName, Version: version}
 	stem, err := l.StemRepo.FetchStem(stemKey)
 	if err != nil {
+		log.Printf("Failed to fetch stem configuration for %s version %s: %v", stemName, version, err)
 		return "", fmt.Errorf("failed to find stem configuration: %v", err)
 	}
 
 	pid, err := l.startLeafInternal(stemName, version, leafID, leafPort, stem.Config)
 	if err != nil {
+		log.Printf("Failed to start leaf process for %s version %s: %v", stemName, version, err)
 		return "", fmt.Errorf("failed to start leaf process: %v", err)
 	}
 
 	err = l.HAProxyClient.BindLeaf(stem.HAProxyBackend, leafID, "127.0.0.1", leafPort)
 	if err != nil {
+		log.Printf("Failed to bind leaf %s to HAProxy: %v", leafID, err)
 		return "", fmt.Errorf("failed to bind leaf to HAProxy: %v", err)
 	}
 
 	err = l.LeafRepo.AddLeaf(stemKey, leafID, leafID, pid, leafPort, time.Now())
 	if err != nil {
+		log.Printf("Leaf %s started but failed to save to repository: %v", leafID, err)
 		return "", fmt.Errorf("leaf started, but failed to save to repository: %v", err)
 	}
 
 	leafURL := fmt.Sprintf("http://127.0.0.1:%d", leafPort)
-	log.Printf("Leaf started successfully: ID: %s, URL: %s", leafID, leafURL)
+	log.Printf("Leaf started successfully: ID=%s, URL=%s", leafID, leafURL)
 
 	return leafID, nil
 }
