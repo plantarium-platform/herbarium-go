@@ -251,26 +251,33 @@ func (l *LeafManager) startLeafInternal(stemName, stemVersion, leafID string, le
 		return 0, fmt.Errorf("failed to create log file: %v", err)
 	}
 
-	stdoutPipe, err := cmd.StdoutPipe()
-	if err != nil {
-		return 0, fmt.Errorf("failed to create stdout pipe: %v", err)
-	}
-	stderrPipe, err := cmd.StderrPipe()
-	if err != nil {
-		return 0, fmt.Errorf("failed to create stderr pipe: %v", err)
-	}
-
 	if err := cmd.Start(); err != nil {
 		logFileHandle.Close()
 		return 0, fmt.Errorf("failed to start leaf process: %v", err)
+	}
+
+	// Create separate pipes for stdout and stderr
+	stdoutPipe, err := cmd.StdoutPipe()
+	if err != nil {
+		logFileHandle.Close()
+		return 0, fmt.Errorf("failed to create stdout pipe: %v", err)
+	}
+
+	stderrPipe, err := cmd.StderrPipe()
+	if err != nil {
+		logFileHandle.Close()
+		return 0, fmt.Errorf("failed to create stderr pipe: %v", err)
 	}
 
 	go func() {
 		stdoutScanner := bufio.NewScanner(stdoutPipe)
 		for stdoutScanner.Scan() {
 			line := stdoutScanner.Text()
-			log.Printf("[Leaf %s stdout] %s", leafID, line)
-			_, _ = logFileHandle.WriteString(line + "\n")
+			log.Printf("[Leaf %s stdout] %s", leafID, line)       // Log to platform logs
+			_, writeErr := logFileHandle.WriteString(line + "\n") // Save to log file
+			if writeErr != nil {
+				log.Printf("[Leaf %s] Error writing to log file: %v", leafID, writeErr)
+			}
 		}
 	}()
 
@@ -278,8 +285,11 @@ func (l *LeafManager) startLeafInternal(stemName, stemVersion, leafID string, le
 		stderrScanner := bufio.NewScanner(stderrPipe)
 		for stderrScanner.Scan() {
 			line := stderrScanner.Text()
-			log.Printf("[Leaf %s stderr] %s", leafID, line)
-			_, _ = logFileHandle.WriteString(line + "\n")
+			log.Printf("[Leaf %s stderr] %s", leafID, line)       // Log to platform logs
+			_, writeErr := logFileHandle.WriteString(line + "\n") // Save to log file
+			if writeErr != nil {
+				log.Printf("[Leaf %s] Error writing to log file: %v", leafID, writeErr)
+			}
 		}
 	}()
 
