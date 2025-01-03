@@ -1,6 +1,7 @@
 package manager
 
 import (
+	"bufio"
 	"fmt"
 	"github.com/plantarium-platform/herbarium-go/internal/haproxy"
 	"github.com/plantarium-platform/herbarium-go/internal/storage"
@@ -10,6 +11,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -209,73 +211,92 @@ func (l *LeafManager) GetRunningLeafs(key storage.StemKey) ([]models.Leaf, error
 
 	return runningLeafs, nil
 }
-
 func (l *LeafManager) startLeafInternal(stemName, stemVersion, leafID string, leafPort int, config *models.StemConfig) (int, error) {
-	// Split the command into the executable (first word) and its arguments
 	commandParts := strings.Fields(config.Command)
 	if len(commandParts) == 0 {
 		return 0, fmt.Errorf("command is empty")
 	}
 
-	// The first part is the command, the rest are arguments
 	executable := commandParts[0]
 	args := commandParts[1:]
 
-	// Get log folder from environment variable or fallback to current directory
 	logFolder := os.Getenv("PLANTARIUM_LOG_FOLDER")
 	if logFolder == "" {
 		logFolder = "."
 	}
 
-	// Ensure the log folder exists
 	if err := os.MkdirAll(logFolder, os.ModePerm); err != nil {
 		return 0, fmt.Errorf("failed to create log folder: %v", err)
 	}
 
-	// Prepare the log file path
 	logFile := fmt.Sprintf("%s/%s.log", logFolder, leafID)
 
-	// Create the command to execute
+	rootFolder := os.Getenv("PLANTARIUM_ROOT_FOLDER")
+	if rootFolder == "" {
+		return 0, fmt.Errorf("PLANTARIUM_ROOT_FOLDER environment variable is not set")
+	}
+	workingDir := filepath.Join(rootFolder, "services", stemName, stemVersion)
+
+	if _, err := os.Stat(workingDir); os.IsNotExist(err) {
+		return 0, fmt.Errorf("working directory %s does not exist: %v", workingDir, err)
+	}
+
+	log.Printf("Starting leaf process: ID=%s, Command=%s %s, Directory=%s", leafID, executable, strings.Join(args, " "), workingDir)
+
 	cmd := exec.Command(executable, args...)
+	cmd.Dir = workingDir
 
-	// Log the command to be executed
-	log.Printf("Executing command: %s %s", executable, strings.Join(args, " "))
-
-	// Open the log file for writing
 	logFileHandle, err := os.Create(logFile)
 	if err != nil {
 		return 0, fmt.Errorf("failed to create log file: %v", err)
 	}
 
-	// Set the stdout and stderr of the command to the log file
-	cmd.Stdout = logFileHandle
-	cmd.Stderr = logFileHandle
-
-	// Start the process
-	err = cmd.Start()
+	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
-		logFileHandle.Close() // Ensure file is closed in case of error
+		return 0, fmt.Errorf("failed to create stdout pipe: %v", err)
+	}
+	stderrPipe, err := cmd.StderrPipe()
+	if err != nil {
+		return 0, fmt.Errorf("failed to create stderr pipe: %v", err)
+	}
+
+	if err := cmd.Start(); err != nil {
+		logFileHandle.Close()
 		return 0, fmt.Errorf("failed to start leaf process: %v", err)
 	}
 
 	go func() {
-		// Wait for the process to finish
-		err := cmd.Wait()
-		if err != nil {
-			log.Printf("Process with PID %d finished with error: %v", cmd.Process.Pid, err)
-		} else {
-			log.Printf("Process with PID %d finished successfully", cmd.Process.Pid)
-		}
-		time.Sleep(100 * time.Millisecond)
-		// Close the log file once the process finishes
-		closeErr := logFileHandle.Close()
-		if closeErr != nil {
-			log.Printf("Failed to close log file %s: %v", logFile, closeErr)
-		} else {
-			log.Printf("Log file %s successfully closed", logFile)
+		stdoutScanner := bufio.NewScanner(stdoutPipe)
+		for stdoutScanner.Scan() {
+			line := stdoutScanner.Text()
+			log.Printf("[Leaf %s stdout] %s", leafID, line)
+			_, _ = logFileHandle.WriteString(line + "\n")
 		}
 	}()
 
-	// Return the PID of the running process
+	go func() {
+		stderrScanner := bufio.NewScanner(stderrPipe)
+		for stderrScanner.Scan() {
+			line := stderrScanner.Text()
+			log.Printf("[Leaf %s stderr] %s", leafID, line)
+			_, _ = logFileHandle.WriteString(line + "\n")
+		}
+	}()
+
+	go func() {
+		err := cmd.Wait()
+		if err != nil {
+			log.Printf("[Leaf %s] Process with PID %d finished with error: %v", leafID, cmd.Process.Pid, err)
+		} else {
+			log.Printf("[Leaf %s] Process with PID %d finished successfully", leafID, cmd.Process.Pid)
+		}
+		time.Sleep(100 * time.Millisecond)
+		if closeErr := logFileHandle.Close(); closeErr != nil {
+			log.Printf("[Leaf %s] Failed to close log file %s: %v", leafID, logFile, closeErr)
+		} else {
+			log.Printf("[Leaf %s] Log file %s successfully closed", leafID, logFile)
+		}
+	}()
+
 	return cmd.Process.Pid, nil
 }
