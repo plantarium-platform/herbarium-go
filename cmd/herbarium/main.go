@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -23,7 +22,7 @@ func main() {
 		log.Fatalf("Failed to initialize the platform: %v", err)
 	}
 
-	fmt.Println("Platform started successfully")
+	log.Println("Platform started successfully")
 	log.Println("Waiting for termination signal...")
 
 	// Create a channel to listen for OS signals
