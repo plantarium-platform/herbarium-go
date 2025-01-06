@@ -219,43 +219,62 @@ func (l *LeafManager) GetRunningLeafs(key storage.StemKey) ([]models.Leaf, error
 	return runningLeafs, nil
 }
 func (l *LeafManager) startLeafInternal(stemName, stemVersion, leafID string, leafPort int, config *models.StemConfig) (int, error) {
+	log.Printf("Starting leaf instance with ID: %s, Stem: %s, Version: %s, Port: %d", leafID, stemName, stemVersion, leafPort)
+
 	commandParts := strings.Fields(config.Command)
 	if len(commandParts) == 0 {
+		log.Printf("Command for leaf %s is empty", leafID)
 		return 0, fmt.Errorf("command is empty")
 	}
 
 	executable := commandParts[0]
 	args := append(commandParts[1:], fmt.Sprintf("--server.port=%d", leafPort))
+	log.Printf("Executable: %s, Arguments: %v", executable, args)
 
 	logFolder := getLogFolder()
+	log.Printf("Log folder for leaf %s: %s", leafID, logFolder)
+
 	logFile, err := setupLogFile(logFolder, leafID)
 	if err != nil {
+		log.Printf("Failed to setup log file for leaf %s: %v", leafID, err)
 		return 0, err
 	}
 	defer logFile.Close()
 
 	workingDir, err := getWorkingDirectory(stemName, stemVersion)
 	if err != nil {
+		log.Printf("Failed to get working directory for leaf %s: %v", leafID, err)
 		return 0, err
 	}
+	log.Printf("Working directory for leaf %s: %s", leafID, workingDir)
 
 	cmd := setupCommand(executable, args, workingDir, leafPort)
+	log.Printf("Command setup for leaf %s: Executable: %s, Args: %v, Working Directory: %s", leafID, executable, args, workingDir)
+
 	stdoutPipe, stderrPipe, err := setupPipes(cmd)
 	if err != nil {
+		log.Printf("Failed to setup pipes for leaf %s: %v", leafID, err)
 		return 0, err
 	}
+	log.Printf("Pipes setup for leaf %s completed", leafID)
 
 	if err := cmd.Start(); err != nil {
+		log.Printf("Failed to start process for leaf %s: %v", leafID, err)
 		return 0, fmt.Errorf("failed to start leaf process: %v", err)
 	}
+	log.Printf("Leaf %s process started with PID: %d", leafID, cmd.Process.Pid)
 
+	// Start monitoring pipes
 	go logPipeOutput(stdoutPipe, logFile, leafID, "stdout")
 	go logPipeOutput(stderrPipe, logFile, leafID, "stderr")
 	go handleProcessCompletion(cmd, logFile, leafID)
 
+	log.Printf("Waiting for leaf %s service to start on port %d", leafID, leafPort)
 	if err := waitForServiceToStart(leafPort); err != nil {
+		log.Printf("Leaf %s service not available on port %d: %v", leafID, leafPort, err)
 		return 0, fmt.Errorf("leaf service not available on port %d: %v", leafPort, err)
 	}
+	log.Printf("Leaf %s service successfully started on port %d", leafID, leafPort)
 
 	return cmd.Process.Pid, nil
 }
