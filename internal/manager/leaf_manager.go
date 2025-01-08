@@ -2,6 +2,7 @@ package manager
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"github.com/plantarium-platform/herbarium-go/internal/haproxy"
 	"github.com/plantarium-platform/herbarium-go/internal/storage"
@@ -305,8 +306,16 @@ func (l *LeafManager) StartGraftNodeLeaf(stemName, version string) (string, erro
 	return graftNodeLeafID, nil
 }
 func (l *LeafManager) createAndBindGraftNodeServer(stem *models.Stem, graftNodeLeaf *models.Leaf) error {
-	// Prepare HTTP server for graft node
+	// Create a new ServeMux and an HTTP server
 	mux := http.NewServeMux()
+	server := &http.Server{
+		Addr:    fmt.Sprintf(":%d", graftNodeLeaf.Port),
+		Handler: mux,
+	}
+
+	// Define a channel to signal server shutdown
+	shutdownChan := make(chan struct{})
+
 	mux.HandleFunc(stem.WorkingURL, func(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Received request for graft node of stem %s", stem.Name)
 
@@ -341,26 +350,35 @@ func (l *LeafManager) createAndBindGraftNodeServer(stem *models.Stem, graftNodeL
 			Scheme: "http",
 			Host:   fmt.Sprintf("localhost:%d", realLeaf.Port),
 		})
-		r.URL.Host = targetURL
+		r.URL.Path = strings.TrimPrefix(r.URL.Path, stem.WorkingURL)
+		r.URL.Host = fmt.Sprintf("localhost:%d", realLeaf.Port)
 		r.URL.Scheme = "http"
 		r.Host = fmt.Sprintf("localhost:%d", realLeaf.Port)
 
-		log.Printf("Forwarding request to real instance: %s", targetURL)
+		log.Printf("Forwarding request to real instance: %s%s", targetURL, r.URL.Path)
 		proxy.ServeHTTP(w, r)
+
+		// Signal to shutdown the server after the request is handled
+		shutdownChan <- struct{}{}
 	})
 
-	// Log the handler URL and port for debugging
-	log.Printf("Setting up HTTP handler for graft node on URL: %s and Port: %d", stem.WorkingURL, graftNodeLeaf.Port)
-
-	// Start the graft node server
+	// Start the graft node server in a goroutine
 	go func() {
-		address := fmt.Sprintf(":%d", graftNodeLeaf.Port)
-		log.Printf("Starting graft node server for stem %s on %s", stem.Name, address)
-		if err := http.ListenAndServe(address, mux); err != nil {
+		log.Printf("Starting graft node server for stem %s on %s", stem.Name, server.Addr)
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Printf("Failed to start graft node server for stem %s: %v", stem.Name, err)
 		}
 	}()
 
+	go func() {
+		<-shutdownChan // Wait for the signal to stop
+		log.Printf("Shutting down graft node server for stem %s", stem.Name)
+
+		// Use context.Background() instead of nil
+		if err := server.Shutdown(context.Background()); err != nil {
+			log.Printf("Error shutting down graft node server for stem %s: %v", stem.Name, err)
+		}
+	}()
 	return nil
 }
 
