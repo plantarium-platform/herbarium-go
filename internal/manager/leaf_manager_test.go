@@ -25,7 +25,9 @@ func TestStartLeafWithPingService(t *testing.T) {
 	tempLogDir := "../../.test-logs"
 	err := os.Setenv("PLANTARIUM_LOG_FOLDER", tempLogDir)
 	assert.NoError(t, err, "failed to set PLANTARIUM_LOG_FOLDER environment variable")
-
+	tempRootDir := "../../.test-root"
+	err = os.Setenv("PLANTARIUM_ROOT_FOLDER", tempRootDir)
+	assert.NoError(t, err, "failed to set PLANTARIUM_ROOT_FOLDER environment variable")
 	err = os.MkdirAll(tempLogDir, os.ModePerm)
 	assert.NoError(t, err, "failed to create test log directory")
 
