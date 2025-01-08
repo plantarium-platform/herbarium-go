@@ -35,8 +35,8 @@ type MockLeafManager struct {
 	mock.Mock
 }
 
-func (m *MockLeafManager) StartLeaf(stemName, version string) (string, error) {
-	args := m.Called(stemName, version)
+func (m *MockLeafManager) StartLeaf(stemName, version string, replaceServer *string) (string, error) {
+	args := m.Called(stemName, version, replaceServer)
 	return args.String(0), args.Error(1)
 }
 
@@ -47,11 +47,15 @@ func (m *MockLeafManager) StopLeaf(stemName, version, leafID string) error {
 
 func (m *MockLeafManager) GetRunningLeafs(key storage.StemKey) ([]models.Leaf, error) {
 	args := m.Called(key)
-	// Use type assertion carefully to handle potential nil or incorrect types.
 	if leafs, ok := args.Get(0).([]models.Leaf); ok {
 		return leafs, args.Error(1)
 	}
 	return nil, args.Error(1)
+}
+
+func (m *MockLeafManager) StartGraftNodeLeaf(stemName, version string) (string, error) {
+	args := m.Called(stemName, version)
+	return args.String(0), args.Error(1)
 }
 
 // MockHAProxyClient is a mock implementation of HAProxyClientInterface.

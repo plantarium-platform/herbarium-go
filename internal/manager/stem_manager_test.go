@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-func TestStemManager_AddStem(t *testing.T) {
+func TestStemManager_AddStemWithMinInstances(t *testing.T) {
 	herbariumDB := storage.GetHerbariumDB()
 	leafRepo := repos.NewLeafRepository(herbariumDB)
 	stemRepo := repos.NewStemRepository(herbariumDB)
@@ -17,8 +17,7 @@ func TestStemManager_AddStem(t *testing.T) {
 	mockHAProxyClient := new(MockHAProxyClient)
 	leafManager := NewLeafManager(leafRepo, mockHAProxyClient, stemRepo)
 
-	mockHAProxyClient.On("BindStem", "test").Return(nil)
-	// Mock leaf creation logic
+	mockHAProxyClient.On("BindStem", "test-stem").Return(nil)
 	mockHAProxyClient.On("BindLeaf", mock.Anything, mock.Anything, "localhost", mock.AnythingOfType("int")).Return(nil)
 
 	stemManager := NewStemManager(stemRepo, leafManager, mockHAProxyClient)
@@ -52,6 +51,49 @@ func TestStemManager_AddStem(t *testing.T) {
 		_, err := leafRepo.FindLeafByID(stemKey, leafID)
 		assert.NoError(t, err)
 	}
+
+	mockHAProxyClient.AssertExpectations(t)
+}
+func TestStemManager_AddStemWithGraftNode(t *testing.T) {
+	herbariumDB := storage.GetHerbariumDB()
+	leafRepo := repos.NewLeafRepository(herbariumDB)
+	stemRepo := repos.NewStemRepository(herbariumDB)
+
+	mockHAProxyClient := new(MockHAProxyClient)
+	leafManager := NewLeafManager(leafRepo, mockHAProxyClient, stemRepo)
+
+	mockHAProxyClient.On("BindStem", "test-stem").Return(nil)
+	mockHAProxyClient.On("BindLeaf", mock.Anything, mock.Anything, "localhost", mock.AnythingOfType("int")).Return(nil)
+
+	stemManager := NewStemManager(stemRepo, leafManager, mockHAProxyClient)
+
+	stemConfig := models.StemConfig{
+		Name:    "test-stem",
+		URL:     "/test",
+		Command: determinePingCommand(), // Use ping command
+		Env:     map[string]string{"ENV_VAR": "test"},
+		Version: "1.0.0",
+	}
+
+	err := stemManager.RegisterStem(stemConfig)
+	assert.NoError(t, err)
+
+	stemKey := storage.StemKey{Name: "test-stem", Version: "1.0.0"}
+	stem, err := stemRepo.FetchStem(stemKey)
+	assert.NoError(t, err)
+	assert.NotNil(t, stem)
+	assert.Equal(t, "test-stem", stem.Name)
+	assert.Equal(t, "1.0.0", stem.Version)
+
+	// Verify that no leaf instances exist
+	assert.Equal(t, 0, len(stem.LeafInstances))
+
+	// Verify that the graft node is set
+	graftNode, err := leafRepo.GetGraftNode(stemKey)
+	assert.NoError(t, err)
+	assert.NotNil(t, graftNode)
+	assert.Equal(t, "test-stem-1.0.0-graftnode", graftNode.ID)
+	assert.Equal(t, models.StatusRunning, graftNode.Status)
 
 	mockHAProxyClient.AssertExpectations(t)
 }

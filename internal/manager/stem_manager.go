@@ -76,13 +76,22 @@ func (s *StemManager) RegisterStem(config models.StemConfig) error {
 	if config.MinInstances != nil && *config.MinInstances > 0 {
 		log.Printf("Starting %d leaf instances for stem %s (version %s)", *config.MinInstances, config.Name, config.Version)
 		for i := 0; i < *config.MinInstances; i++ {
-			_, err := s.LeafManager.StartLeaf(config.Name, config.Version)
+			_, err := s.LeafManager.StartLeaf(config.Name, config.Version, nil)
 			if err != nil {
 				log.Printf("Failed to start leaf for stem %s version %s: %v", config.Name, config.Version, err)
 				log.Printf("Rolling back stem %s registration.", config.Name)
 				_ = s.StemRepo.DeleteStem(stemKey) // Rollback stem registration on failure
 				return fmt.Errorf("failed to start leaf for stem %s version %s: %v", config.Name, config.Version, err)
 			}
+		}
+	} else {
+		log.Printf("No minimum instances specified for stem %s, starting graft node...", config.Name)
+		_, err := s.LeafManager.StartGraftNodeLeaf(config.Name, config.Version)
+		if err != nil {
+			log.Printf("Failed to start graft node for stem %s: %v", config.Name, err)
+			log.Printf("Rolling back stem %s registration.", config.Name)
+			_ = s.StemRepo.DeleteStem(stemKey) // Rollback stem registration on failure
+			return fmt.Errorf("failed to start graft node for stem %s: %v", config.Name, err)
 		}
 	}
 

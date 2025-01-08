@@ -10,6 +10,9 @@ import (
 	"io"
 	"log"
 	"net"
+	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -26,9 +29,10 @@ const (
 
 // LeafManagerInterface defines methods for managing leafs.
 type LeafManagerInterface interface {
-	StartLeaf(stemName, version string) (string, error)         // Starts a new leaf instance.
-	StopLeaf(stemName, version, leafID string) error            // Stops a specific leaf instance.
-	GetRunningLeafs(key storage.StemKey) ([]models.Leaf, error) // Retrieves all running leafs for a stem.
+	StartLeaf(stemName, version string, replaceServer *string) (string, error) // Starts a new leaf instance, optionally replacing an existing server in HAProxy.
+	StopLeaf(stemName, version, leafID string) error                           // Stops a specific leaf instance.
+	GetRunningLeafs(key storage.StemKey) ([]models.Leaf, error)                // Retrieves all running leafs for a stem.
+	StartGraftNodeLeaf(stemName, version string) (string, error)               // Starts a graft node leaf and proxies requests to the real instance.
 }
 
 // LeafManager manages leaf instances and interacts with the Leaf repository and HAProxy client.
@@ -114,17 +118,20 @@ func findAvailablePort(startPort int) (int, error) {
 // 5. HAProxy binds the leaf to the `ping-backend` backend on `localhost:8000`.
 // 6. The repository saves the leaf details under `ping-service-stem`.
 // 7. The method returns the leaf ID `ping-service-stem-v1.0-1672574400`.
-func (l *LeafManager) StartLeaf(stemName, version string) (string, error) {
+func (l *LeafManager) StartLeaf(stemName, version string, replaceServer *string) (string, error) {
 	log.Printf("Starting leaf for stem: %s, version: %s", stemName, version)
 
+	// Generate a unique leaf ID
 	leafID := fmt.Sprintf("%s-%s-%d", stemName, version, time.Now().UnixNano())
 
+	// Find an available port for the leaf
 	leafPort, err := findAvailablePort(8000)
 	if err != nil {
 		log.Printf("Failed to find an available port: %v", err)
 		return "", fmt.Errorf("failed to find an available port: %v", err)
 	}
 
+	// Retrieve stem configuration
 	stemKey := storage.StemKey{Name: stemName, Version: version}
 	stem, err := l.StemRepo.FetchStem(stemKey)
 	if err != nil {
@@ -132,18 +139,31 @@ func (l *LeafManager) StartLeaf(stemName, version string) (string, error) {
 		return "", fmt.Errorf("failed to find stem configuration: %v", err)
 	}
 
+	// Start the leaf process
 	pid, err := l.startLeafInternal(stemName, version, leafID, leafPort, stem.Config)
 	if err != nil {
 		log.Printf("Failed to start leaf process for %s version %s: %v", stemName, version, err)
 		return "", fmt.Errorf("failed to start leaf process: %v", err)
 	}
 
-	err = l.HAProxyClient.BindLeaf(stem.HAProxyBackend, leafID, "localhost", leafPort)
-	if err != nil {
-		log.Printf("Failed to bind leaf %s to HAProxy: %v", leafID, err)
-		return "", fmt.Errorf("failed to bind leaf to HAProxy: %v", err)
+	// HAProxy integration
+	if replaceServer != nil {
+		// Replace an existing server in HAProxy
+		err = l.HAProxyClient.ReplaceLeaf(stem.HAProxyBackend, *replaceServer, leafID, "localhost", leafPort)
+		if err != nil {
+			log.Printf("Failed to replace server %s with leaf %s in HAProxy: %v", *replaceServer, leafID, err)
+			return "", fmt.Errorf("failed to replace server in HAProxy: %v", err)
+		}
+	} else {
+		// Bind a new server to HAProxy
+		err = l.HAProxyClient.BindLeaf(stem.HAProxyBackend, leafID, "localhost", leafPort)
+		if err != nil {
+			log.Printf("Failed to bind leaf %s to HAProxy: %v", leafID, err)
+			return "", fmt.Errorf("failed to bind leaf to HAProxy: %v", err)
+		}
 	}
 
+	// Save the leaf in the repository
 	err = l.LeafRepo.AddLeaf(stemKey, leafID, leafID, pid, leafPort, time.Now())
 	if err != nil {
 		log.Printf("Leaf %s started but failed to save to repository: %v", leafID, err)
@@ -218,6 +238,132 @@ func (l *LeafManager) GetRunningLeafs(key storage.StemKey) ([]models.Leaf, error
 
 	return runningLeafs, nil
 }
+func (l *LeafManager) StartGraftNodeLeaf(stemName, version string) (string, error) {
+	log.Printf("Starting graft node leaf for stem: %s, version: %s", stemName, version)
+
+	// Retrieve stem configuration
+	stemKey := storage.StemKey{Name: stemName, Version: version}
+	stem, err := l.StemRepo.FetchStem(stemKey)
+	if err != nil {
+		log.Printf("Failed to fetch stem configuration for %s version %s: %v", stemName, version, err)
+		return "", fmt.Errorf("failed to find stem configuration: %v", err)
+	}
+
+	// Check if a graft node already exists
+	existingGraftNode, err := l.LeafRepo.GetGraftNode(stemKey)
+	if err != nil {
+		log.Printf("Error retrieving existing graft node for stem %s: %v", stemName, err)
+		return "", fmt.Errorf("failed to retrieve existing graft node: %v", err)
+	}
+	if existingGraftNode != nil {
+		log.Printf("Graft node for stem %s already exists: %s", stemName, existingGraftNode.ID)
+		return "", fmt.Errorf("graft node for stem %s already exists", stemName)
+	}
+
+	// Generate a unique ID for the graft node leaf
+	graftNodeLeafID := fmt.Sprintf("%s-%s-graftnode", stemName, version)
+
+	// Find an available port for the graft node
+	graftNodePort, err := findAvailablePort(8000)
+	if err != nil {
+		log.Printf("Failed to find an available port for graft node: %v", err)
+		return "", fmt.Errorf("failed to find an available port: %v", err)
+	}
+
+	// Create the graft node leaf object
+	graftNodeLeaf := &models.Leaf{
+		ID:            graftNodeLeafID,
+		PID:           0, // Placeholder, as the process is internal
+		HAProxyServer: graftNodeLeafID,
+		Port:          graftNodePort,
+		Status:        models.StatusRunning,
+		Initialized:   time.Now(),
+	}
+
+	// Bind the graft node to the HAProxy backend
+	err = l.HAProxyClient.BindLeaf(stem.HAProxyBackend, graftNodeLeaf.ID, "localhost", graftNodeLeaf.Port)
+	if err != nil {
+		log.Printf("Failed to bind graft node to HAProxy backend for stem %s: %v", stemName, err)
+		return "", fmt.Errorf("failed to bind graft node to HAProxy backend: %v", err)
+	}
+
+	// Create and bind the graft node server
+	err = l.createAndBindGraftNodeServer(stem, graftNodeLeaf)
+	if err != nil {
+		log.Printf("Failed to create and bind graft node for stem %s: %v", stemName, err)
+		return "", err
+	}
+
+	// Save the graft node in the repository
+	err = l.LeafRepo.SetGraftNode(stemKey, graftNodeLeaf)
+	if err != nil {
+		log.Printf("Failed to save graft node leaf for stem %s: %v", stemName, err)
+		return "", fmt.Errorf("failed to save graft node leaf: %v", err)
+	}
+
+	log.Printf("Graft node leaf successfully started and bound: ID=%s, Port=%d", graftNodeLeafID, graftNodePort)
+	return graftNodeLeafID, nil
+}
+func (l *LeafManager) createAndBindGraftNodeServer(stem *models.Stem, graftNodeLeaf *models.Leaf) error {
+	// Prepare HTTP server for graft node
+	mux := http.NewServeMux()
+	mux.HandleFunc(stem.WorkingURL, func(w http.ResponseWriter, r *http.Request) {
+		log.Printf("Received request for graft node of stem %s", stem.Name)
+
+		// Start the real instance using StartLeaf with graft node replacement
+		stemKey := storage.StemKey{Name: stem.Name, Version: stem.Version}
+		realLeafID, err := l.StartLeaf(stem.Name, stem.Version, &graftNodeLeaf.ID)
+		if err != nil {
+			log.Printf("Failed to start real instance for stem %s: %v", stem.Name, err)
+			http.Error(w, "Internal Server Error: Unable to start real instance", http.StatusInternalServerError)
+			return
+		}
+
+		// Retrieve the real leaf details
+		realLeaf, err := l.LeafRepo.FindLeafByID(stemKey, realLeafID)
+		if err != nil {
+			log.Printf("Failed to retrieve real leaf from repository for stem %s: %v", stem.Name, err)
+			http.Error(w, "Internal Server Error: Unable to retrieve real instance", http.StatusInternalServerError)
+			return
+		}
+
+		// Clear the graft node from the repository
+		err = l.LeafRepo.ClearGraftNode(stemKey)
+		if err != nil {
+			log.Printf("Failed to clear graft node for stem %s: %v", stem.Name, err)
+			http.Error(w, "Internal Server Error: Unable to clear graft node", http.StatusInternalServerError)
+			return
+		}
+
+		// Proxy the request to the real instance
+		targetURL := fmt.Sprintf("http://localhost:%d%s", realLeaf.Port, r.URL.Path)
+		proxy := httputil.NewSingleHostReverseProxy(&url.URL{
+			Scheme: "http",
+			Host:   fmt.Sprintf("localhost:%d", realLeaf.Port),
+		})
+		r.URL.Host = targetURL
+		r.URL.Scheme = "http"
+		r.Host = fmt.Sprintf("localhost:%d", realLeaf.Port)
+
+		log.Printf("Forwarding request to real instance: %s", targetURL)
+		proxy.ServeHTTP(w, r)
+	})
+
+	// Log the handler URL and port for debugging
+	log.Printf("Setting up HTTP handler for graft node on URL: %s and Port: %d", stem.WorkingURL, graftNodeLeaf.Port)
+
+	// Start the graft node server
+	go func() {
+		address := fmt.Sprintf(":%d", graftNodeLeaf.Port)
+		log.Printf("Starting graft node server for stem %s on %s", stem.Name, address)
+		if err := http.ListenAndServe(address, mux); err != nil {
+			log.Printf("Failed to start graft node server for stem %s: %v", stem.Name, err)
+		}
+	}()
+
+	return nil
+}
+
 func (l *LeafManager) startLeafInternal(stemName, stemVersion, leafID string, leafPort int, config *models.StemConfig) (int, error) {
 	log.Printf("Starting leaf instance with ID: %s, Stem: %s, Version: %s, Port: %d", leafID, stemName, stemVersion, leafPort)
 

@@ -3,6 +3,7 @@ package manager
 import (
 	"fmt"
 	"github.com/plantarium-platform/herbarium-go/internal/storage"
+	"github.com/stretchr/testify/mock"
 	"log"
 	"os"
 	"os/exec"
@@ -64,7 +65,7 @@ func TestStartLeafWithPingService(t *testing.T) {
 
 	leafManager := NewLeafManager(leafRepo, mockHAProxyClient, stemRepo)
 
-	leafIDReturned, err := leafManager.StartLeaf(stemKey.Name, stemKey.Version)
+	leafIDReturned, err := leafManager.StartLeaf(stemKey.Name, stemKey.Version, nil)
 	assert.NoError(t, err)
 	assert.Equal(t, leafID, leafIDReturned)
 
@@ -248,4 +249,77 @@ func TestStopLeaf(t *testing.T) {
 	stemInDB, exists := leafStorage.Stems[stemKey]
 	assert.True(t, exists, "stem should still exist in the database")
 	assert.Empty(t, stemInDB.LeafInstances, "stem should have no leaf instances remaining")
+}
+
+func TestStartGraftNodeLeaf(t *testing.T) {
+	// Mock time for consistent ID generation
+	fakeTime := time.Date(2023, 01, 01, 12, 0, 0, 0, time.UTC)
+	patch := monkey.Patch(time.Now, func() time.Time { return fakeTime })
+	t.Cleanup(patch.Unpatch)
+
+	// Setup temporary log directory
+	tempLogDir := "../../.test-logs"
+	err := os.Setenv("PLANTARIUM_LOG_FOLDER", tempLogDir)
+	assert.NoError(t, err, "failed to set PLANTARIUM_LOG_FOLDER environment variable")
+
+	err = os.MkdirAll(tempLogDir, os.ModePerm)
+	assert.NoError(t, err, "failed to create test log directory")
+
+	// Setup in-memory storage and repositories
+	leafStorage := storage.GetHerbariumDB()
+	leafRepo := repos.NewLeafRepository(leafStorage)
+	stemRepo := repos.NewStemRepository(leafStorage)
+
+	stemKey := storage.StemKey{Name: "test-stem", Version: "1.0.0"}
+	stem := &models.Stem{
+		Name:           stemKey.Name,
+		Type:           models.StemTypeDeployment,
+		WorkingURL:     "/test",
+		HAProxyBackend: "test-backend",
+		Version:        stemKey.Version,
+		Environment: map[string]string{
+			"ENV_VAR": "test",
+		},
+		Config: &models.StemConfig{
+			Name:    "test-service",
+			URL:     "/test",
+			Command: determinePingCommand(),
+			Env: map[string]string{
+				"ENV_VAR": "test",
+			},
+			Version: stemKey.Version,
+		},
+	}
+	leafStorage.Stems[stemKey] = stem
+
+	// Mock HAProxyClient
+	mockHAProxyClient := new(MockHAProxyClient)
+	mockHAProxyClient.On("BindStem", "test-backend").Return(nil)
+	mockHAProxyClient.On("ReplaceLeaf", "test-backend", "test-stem-1.0.0-graftnode", mock.Anything, "localhost", mock.AnythingOfType("int")).Return(nil)
+
+	// Create the LeafManager
+	leafManager := NewLeafManager(leafRepo, mockHAProxyClient, stemRepo)
+
+	// Test StartGraftNodeLeaf
+	graftNodeID, err := leafManager.StartGraftNodeLeaf(stemKey.Name, stemKey.Version)
+	assert.NoError(t, err, "failed to start graft node leaf")
+	assert.Equal(t, "test-stem-1.0.0-graftnode", graftNodeID)
+
+	// Verify graft node in the repository
+	graftNode, err := leafRepo.GetGraftNode(stemKey)
+	assert.NoError(t, err)
+	assert.NotNil(t, graftNode)
+	assert.Equal(t, graftNode.ID, "test-stem-1.0.0-graftnode")
+	assert.Equal(t, graftNode.Status, models.StatusRunning)
+
+	mockHAProxyClient.AssertExpectations(t)
+
+	t.Cleanup(func() {
+		err = os.RemoveAll(tempLogDir)
+		if err != nil {
+			log.Printf("Failed to remove temporary log directory %s: %v", tempLogDir, err)
+		}
+
+		os.Unsetenv("PLANTARIUM_LOG_FOLDER")
+	})
 }
