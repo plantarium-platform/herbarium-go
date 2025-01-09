@@ -2,6 +2,7 @@ package manager
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"fmt"
 	"github.com/plantarium-platform/herbarium-go/internal/haproxy"
@@ -19,6 +20,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"text/template"
 	"time"
 )
 
@@ -381,66 +383,113 @@ func (l *LeafManager) createAndBindGraftNodeServer(stem *models.Stem, graftNodeL
 	}()
 	return nil
 }
-
 func (l *LeafManager) startLeafInternal(stemName, stemVersion, leafID string, leafPort int, config *models.StemConfig) (int, error) {
 	log.Printf("Starting leaf instance with ID: %s, Stem: %s, Version: %s, Port: %d", leafID, stemName, stemVersion, leafPort)
 
-	commandParts := strings.Fields(config.Command)
-	if len(commandParts) == 0 {
-		log.Printf("Command for leaf %s is empty", leafID)
-		return 0, fmt.Errorf("command is empty")
-	}
-
-	executable := commandParts[0]
-	args := append(commandParts[1:], fmt.Sprintf("--server.port=%d", leafPort))
-	log.Printf("Executable: %s, Arguments: %v", executable, args)
-
-	logFolder := getLogFolder()
-	log.Printf("Log folder for leaf %s: %s", leafID, logFolder)
-
-	logFile, err := setupLogFile(logFolder, leafID)
-	if err != nil {
-		log.Printf("Failed to setup log file for leaf %s: %v", leafID, err)
-		return 0, err
-	}
-	defer logFile.Close()
-
+	// Prepare working directory
 	workingDir, err := getWorkingDirectory(stemName, stemVersion)
 	if err != nil {
 		log.Printf("Failed to get working directory for leaf %s: %v", leafID, err)
 		return 0, err
 	}
-	log.Printf("Working directory for leaf %s: %s", leafID, workingDir)
 
-	cmd := setupCommand(executable, args, workingDir, leafPort)
-	log.Printf("Command setup for leaf %s: Executable: %s, Args: %v, Working Directory: %s", leafID, executable, args, workingDir)
-
-	stdoutPipe, stderrPipe, err := setupPipes(cmd)
+	// Prepare command with placeholders replaced
+	command, err := prepareCommandWithTemplate(config.Command, map[string]interface{}{
+		"PORT": leafPort,
+	})
 	if err != nil {
-		log.Printf("Failed to setup pipes for leaf %s: %v", leafID, err)
+		log.Printf("Failed to prepare command for leaf %s: %v", leafID, err)
 		return 0, err
 	}
-	log.Printf("Pipes setup for leaf %s completed", leafID)
 
+	// Parse command
+	commandParts := strings.Fields(command)
+	executable := commandParts[0]
+	args := commandParts[1:]
+
+	// Create and configure the command
+	cmd := exec.Command(executable, args...)
+	cmd.Dir = workingDir
+	cmd.Env = append(os.Environ(), formatEnvVars(config.Env)...)
+
+	// Set up pipes
+	stdoutPipe, stderrPipe, err := setupPipes(cmd)
+	if err != nil {
+		log.Printf("Failed to set up pipes for leaf %s: %v", leafID, err)
+		return 0, err
+	}
+
+	// Set up log file
+	logFile, err := setupLogFile(getLogFolder(), leafID)
+	if err != nil {
+		log.Printf("Failed to set up log file for leaf %s: %v", leafID, err)
+		return 0, err
+	}
+	defer logFile.Close()
+
+	// Process output and detect readiness
+	startMessage := ""
+	if config.StartMessage != nil {
+		startMessage = *config.StartMessage
+	}
+
+	messageChan := make(chan string, 1)
+	errorChan := make(chan error, 1)
+
+	// Concurrently log output and detect readiness
+	go logAndDetectOutput(stdoutPipe, logFile, leafID, "stdout", startMessage, messageChan, errorChan)
+	go logAndDetectOutput(stderrPipe, logFile, leafID, "stderr", startMessage, messageChan, errorChan)
+
+	// Start the process
 	if err := cmd.Start(); err != nil {
 		log.Printf("Failed to start process for leaf %s: %v", leafID, err)
 		return 0, fmt.Errorf("failed to start leaf process: %v", err)
 	}
 	log.Printf("Leaf %s process started with PID: %d", leafID, cmd.Process.Pid)
 
-	// Start monitoring pipes
-	go logPipeOutput(stdoutPipe, logFile, leafID, "stdout")
-	go logPipeOutput(stderrPipe, logFile, leafID, "stderr")
+	// Handle process completion in the background
 	go handleProcessCompletion(cmd, logFile, leafID)
 
-	log.Printf("Waiting for leaf %s service to start on port %d", leafID, leafPort)
-	if err := waitForServiceToStart(leafPort); err != nil {
-		log.Printf("Leaf %s service not available on port %d: %v", leafID, leafPort, err)
-		return 0, fmt.Errorf("leaf service not available on port %d: %v", leafPort, err)
+	// Wait for readiness (port or start message)
+	if err := waitForServiceToStart(leafPort, startMessage, messageChan, errorChan); err != nil {
+		log.Printf("Leaf %s service not ready: %v", leafID, err)
+		return 0, fmt.Errorf("leaf service not ready: %v", err)
 	}
-	log.Printf("Leaf %s service successfully started on port %d", leafID, leafPort)
 
+	log.Printf("Leaf %s service successfully started on port %d", leafID, leafPort)
 	return cmd.Process.Pid, nil
+}
+func logAndDetectOutput(pipe io.ReadCloser, logFile *os.File, leafID, pipeType, startMessage string, messageChan chan string, errorChan chan error) {
+	scanner := bufio.NewScanner(pipe)
+	for scanner.Scan() {
+		line := scanner.Text()
+		log.Printf("[Leaf %s %s] %s", leafID, pipeType, line)
+		if _, err := logFile.WriteString(line + "\n"); err != nil {
+			log.Printf("[Leaf %s] Error writing to log file: %v", leafID, err)
+		}
+		if startMessage != "" && strings.Contains(line, startMessage) {
+			messageChan <- line
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		errorChan <- err
+	}
+}
+
+// prepareCommandWithTemplate processes a command string with placeholders (e.g., `{{.PORT}}`) using the provided data.
+func prepareCommandWithTemplate(command string, data map[string]interface{}) (string, error) {
+	tmpl, err := template.New("command").Parse(command)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse command template: %w", err)
+	}
+
+	var output bytes.Buffer
+	err = tmpl.Execute(&output, data)
+	if err != nil {
+		return "", fmt.Errorf("failed to execute command template: %w", err)
+	}
+
+	return output.String(), nil
 }
 
 func getLogFolder() string {
@@ -450,7 +499,13 @@ func getLogFolder() string {
 	}
 	return logFolder
 }
-
+func formatEnvVars(envVars map[string]string) []string {
+	var formatted []string
+	for key, value := range envVars {
+		formatted = append(formatted, fmt.Sprintf("%s=%s", key, value))
+	}
+	return formatted
+}
 func setupLogFile(logFolder, leafID string) (*os.File, error) {
 	if err := os.MkdirAll(logFolder, os.ModePerm); err != nil {
 		return nil, fmt.Errorf("failed to create log folder: %v", err)
@@ -472,14 +527,6 @@ func getWorkingDirectory(stemName, stemVersion string) (string, error) {
 	return workingDir, nil
 }
 
-func setupCommand(executable string, args []string, workingDir string, leafPort int) *exec.Cmd {
-	cmd := exec.Command(executable, args...)
-	cmd.Dir = workingDir
-	cmd.Env = append(os.Environ(), fmt.Sprintf("MICRONAUT_SERVER_PORT=%d", leafPort))
-	log.Printf("Executing command: %s %s in directory: %s", executable, strings.Join(args, " "), workingDir)
-	return cmd
-}
-
 func setupPipes(cmd *exec.Cmd) (stdout, stderr io.ReadCloser, err error) {
 	stdout, err = cmd.StdoutPipe()
 	if err != nil {
@@ -492,24 +539,23 @@ func setupPipes(cmd *exec.Cmd) (stdout, stderr io.ReadCloser, err error) {
 	return
 }
 
-func logPipeOutput(pipe io.ReadCloser, logFile *os.File, leafID, pipeType string) {
-	scanner := bufio.NewScanner(pipe)
-	for scanner.Scan() {
-		line := scanner.Text()
-		log.Printf("[Leaf %s %s] %s", leafID, pipeType, line)
-		if _, err := logFile.WriteString(line + "\n"); err != nil {
-			log.Printf("[Leaf %s] Error writing to log file: %v", leafID, err)
-		}
-	}
-}
-
 func handleProcessCompletion(cmd *exec.Cmd, logFile *os.File, leafID string) {
 	if err := cmd.Wait(); err != nil {
-		log.Printf("[Leaf %s] Process with PID %d finished with error: %v", leafID, cmd.Process.Pid, err)
+		if cmd.Process != nil {
+			log.Printf("[Leaf %s] Process with PID %d finished with error: %v", leafID, cmd.Process.Pid, err)
+		} else {
+			log.Printf("[Leaf %s] Process finished with error but PID is unavailable: %v", leafID, err)
+		}
 	} else {
-		log.Printf("[Leaf %s] Process with PID %d finished successfully", leafID, cmd.Process.Pid)
+		if cmd.Process != nil {
+			log.Printf("[Leaf %s] Process with PID %d finished successfully", leafID, cmd.Process.Pid)
+		} else {
+			log.Printf("[Leaf %s] Process finished successfully but PID is unavailable", leafID)
+		}
 	}
+
 	time.Sleep(ServiceCheckInterval)
+
 	if err := logFile.Close(); err != nil {
 		log.Printf("[Leaf %s] Failed to close log file: %v", leafID, err)
 	} else {
@@ -517,16 +563,32 @@ func handleProcessCompletion(cmd *exec.Cmd, logFile *os.File, leafID string) {
 	}
 }
 
-func waitForServiceToStart(port int) error {
+func waitForServiceToStart(port int, startMessage string, messageChan chan string, errorChan chan error) error {
 	start := time.Now()
 	address := fmt.Sprintf("localhost:%d", port)
+
 	for time.Since(start) < ServiceStartupTimeout {
-		conn, err := net.DialTimeout("tcp", address, ServiceCheckInterval)
-		if err == nil {
-			_ = conn.Close()
-			return nil
+		// Check for start message
+		select {
+		case msg := <-messageChan:
+			if msg != "" {
+				log.Printf("Detected start message: %s", msg)
+				return nil
+			}
+		case err := <-errorChan:
+			log.Printf("Error while reading logs: %v", err)
+			return fmt.Errorf("error while checking start message: %v", err)
+		default:
+			// Check port availability
+			conn, err := net.DialTimeout("tcp", address, ServiceCheckInterval)
+			if err == nil {
+				_ = conn.Close()
+				return nil
+			}
 		}
+
 		time.Sleep(ServiceCheckInterval)
 	}
-	return fmt.Errorf("timeout waiting for service on port %d", port)
+
+	return fmt.Errorf("timeout waiting for service on port %d or start message", port)
 }

@@ -44,3 +44,9 @@ func (s *HerbariumDB) WithRLock(fn func() error) error {
 	defer s.mu.RUnlock()
 	return fn()
 }
+
+func (s *HerbariumDB) Clear() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.Stems = make(map[StemKey]*models.Stem)
+}

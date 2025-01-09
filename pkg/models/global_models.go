@@ -12,8 +12,9 @@ type StemConfig struct {
 		Name   string `yaml:"name"`   // Dependency name
 		Schema string `yaml:"schema"` // Dependency schema
 	} `yaml:"dependencies"`
-	Version      string `yaml:"version"`      // Service version
-	MinInstances *int   `yaml:"minInstances"` // Minimum number of instances to keep running (optional)
+	Version      string  `yaml:"version"`      // Service version
+	MinInstances *int    `yaml:"minInstances"` // Minimum number of instances to keep running (optional)
+	StartMessage *string `yaml:"startMessage"` // Message indicating the service has started (optional)
 }
 
 // Stem represents a deployment with associated leaf instances and configuration.

@@ -1,6 +1,7 @@
 name: hello-service
 url: /hello
 command: "java -jar hello-service.jar"
+start-message: "Succesfully started"
 env:
   GLOBAL_VAR: "production"
 dependencies:

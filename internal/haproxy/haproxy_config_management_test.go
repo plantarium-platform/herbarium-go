@@ -115,12 +115,16 @@ func TestCreateBackend(t *testing.T) {
 	defer httpmock.DeactivateAndReset()
 
 	// Register a mock responder for the GET request to check backend existence
-	httpmock.RegisterResponder("GET", "/configuration/backends",
-		httpmock.NewStringResponder(404, "")) // Simulate backend not found
+	httpmock.RegisterResponder("GET", "/configuration/backends/backend1",
+		httpmock.NewStringResponder(200, "")) // Simulate backend exists
+
+	// Register a mock responder for the DELETE request to delete the backend
+	httpmock.RegisterResponder("DELETE", "/configuration/backends/backend1",
+		httpmock.NewStringResponder(202, "{}")) // Simulate successful deletion
 
 	// Register a mock responder for the POST request to create a backend
 	httpmock.RegisterResponder("POST", "/configuration/backends",
-		httpmock.NewStringResponder(200, "{}"))
+		httpmock.NewStringResponder(202, "{}")) // Simulate successful creation
 
 	// Initialize the manager with the mocked client
 	manager := &HAProxyConfigurationManager{
@@ -132,6 +136,12 @@ func TestCreateBackend(t *testing.T) {
 
 	// Assert the result
 	assert.NoError(t, err)
+
+	// Validate that all mock calls were made
+	info := httpmock.GetCallCountInfo()
+	assert.Equal(t, 1, info["GET /configuration/backends/backend1"])
+	assert.Equal(t, 1, info["DELETE /configuration/backends/backend1"])
+	assert.Equal(t, 1, info["POST /configuration/backends"])
 }
 
 func TestAddServer(t *testing.T) {
@@ -144,7 +154,7 @@ func TestAddServer(t *testing.T) {
 
 	// Register a mock responder for the POST request to add a server
 	httpmock.RegisterResponder("POST", "/configuration/backends/backend1/servers",
-		httpmock.NewStringResponder(200, "{}"))
+		httpmock.NewStringResponder(201, "{}"))
 
 	// Initialize the manager with the mocked client
 	manager := &HAProxyConfigurationManager{

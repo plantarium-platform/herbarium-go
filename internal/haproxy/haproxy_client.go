@@ -95,13 +95,12 @@ func (c *HAProxyClient) ReplaceLeaf(backendName, oldHAProxyServer, newHAProxySer
 	return c.transactionMiddleware(func(transactionID string) error {
 		// Remove the old leaf service
 		err := c.configManager.DeleteServer(backendName, oldHAProxyServer, transactionID)
-		address := fmt.Sprintf("%s:%d", serviceAddress, servicePort)
 		if err != nil {
 			return fmt.Errorf("failed to remove old leaf service: %v", err)
 		}
 
-		// Add the new leaf service with individual arguments (not a map)
-		err = c.configManager.AddServer(backendName, newHAProxyServer, address, servicePort, transactionID)
+		// Add the new leaf service with separate address and port
+		err = c.configManager.AddServer(backendName, newHAProxyServer, serviceAddress, servicePort, transactionID)
 		if err != nil {
 			return fmt.Errorf("failed to add new leaf service: %v", err)
 		}

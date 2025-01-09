@@ -1,0 +1,1 @@
+This folder is required for leaf start test as we have logic of starting from the proper work dir

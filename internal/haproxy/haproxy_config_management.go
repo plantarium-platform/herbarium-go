@@ -212,7 +212,7 @@ func (c *HAProxyConfigurationManager) AddServer(backendName, serverName, host st
 	}
 
 	// Analyze the response
-	if resp.StatusCode() != 202 {
+	if resp.StatusCode() != 202 && resp.StatusCode() != 201 {
 		return fmt.Errorf(
 			"unexpected status code %d when adding server to backend %s: response: %s",
 			resp.StatusCode(), backendName, resp.String(),
