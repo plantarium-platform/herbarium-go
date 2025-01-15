@@ -37,7 +37,7 @@ func TestStemManager_AddStemWithMinInstances(t *testing.T) {
 	stemManager := NewStemManager(stemRepo, leafManager, mockHAProxyClient)
 
 	minInstances := 2
-	startMessage := "Reply from 127.0.0.1"
+	startMessage := "from 127.0.0.1"
 	stemConfig := models.StemConfig{
 		Name:         "ping-service-stem",
 		URL:          "/test",

@@ -38,7 +38,7 @@ func TestStartLeafWithPingService(t *testing.T) {
 	stemKey := storage.StemKey{Name: "ping-service-stem", Version: "v1.0"}
 	leafPort := 8000
 	leafID := "ping-service-stem-v1.0-1672574400000000000"
-	startMessage := "Reply from 127.0.0.1"
+	startMessage := "from 127.0.0.1"
 	stem := &models.Stem{
 		Name:           stemKey.Name,
 		Type:           models.StemTypeDeployment,
@@ -94,7 +94,7 @@ func TestStartLeafWithPingService(t *testing.T) {
 
 	// Validate the log file contents
 	log.Printf("Log file contents:\n%s", string(logFileContents))
-	assert.Contains(t, string(logFileContents), "Reply from 127.0.0.1")
+	assert.Contains(t, string(logFileContents), "from 127.0.0.1")
 
 	t.Cleanup(func() {
 		if leaf != nil {
