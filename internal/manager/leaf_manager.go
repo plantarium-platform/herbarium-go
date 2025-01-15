@@ -402,6 +402,9 @@ func (l *LeafManager) startLeafInternal(stemName, stemVersion, leafID string, le
 		return 0, err
 	}
 
+	// Log the full command that will be executed
+	log.Printf("Executing command for leaf %s: %s", leafID, command)
+
 	// Parse command
 	commandParts := strings.Fields(command)
 	executable := commandParts[0]
